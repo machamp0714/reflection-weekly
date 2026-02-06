@@ -1,0 +1,70 @@
+{
+  "name": "reflection-weekly",
+  "version": "1.0.0",
+  "description": "Weekly reflection system integrating GitHub commits, Toggl time entries, and AI analysis to Notion",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "reflection-weekly": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "check": "npx tsx scripts/check-connection.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/machamp0714/reflection-weekly.git"
+  },
+  "keywords": [
+    "reflection",
+    "weekly",
+    "github",
+    "toggl",
+    "notion",
+    "openai",
+    "kpt"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/machamp0714/reflection-weekly/issues"
+  },
+  "homepage": "https://github.com/machamp0714/reflection-weekly#readme",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "commander": "^12.0.0",
+    "cosmiconfig": "^9.0.0",
+    "dotenv": "^16.4.0",
+    "ora": "^8.0.0",
+    "cli-progress": "^3.12.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "node-cron": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "@types/cli-progress": "^3.11.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0"
+  }
+}
