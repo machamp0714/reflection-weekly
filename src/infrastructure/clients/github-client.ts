@@ -38,6 +38,32 @@ export interface CommitStats {
 }
 
 /**
+ * File change detail with optional patch
+ */
+export interface FileChange {
+  readonly filename: string;
+  readonly status: string;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly patch?: string;
+}
+
+/**
+ * Commit detail with file changes and patches
+ */
+export interface CommitDetail {
+  readonly sha: string;
+  readonly message: string;
+  readonly author: {
+    readonly name: string;
+    readonly email: string;
+    readonly date: string;
+  };
+  readonly stats: CommitStats;
+  readonly files: readonly FileChange[];
+}
+
+/**
  * Options for getCommits
  */
 export interface GetCommitsOptions {
@@ -83,8 +109,10 @@ interface RawGitHubCommit {
   };
   files?: Array<{
     filename: string;
+    status: string;
     additions: number;
     deletions: number;
+    patch?: string;
   }>;
 }
 
@@ -183,6 +211,50 @@ export class GitHubClient {
         additions: commit.stats?.additions || 0,
         deletions: commit.stats?.deletions || 0,
         filesChanged: commit.files?.length || 0,
+      });
+    } catch (error) {
+      return this.handleError(error, repository);
+    }
+  }
+
+  /**
+   * Get full commit detail including file changes and patches
+   */
+  async getCommitDetail(
+    repository: string,
+    sha: string
+  ): Promise<Result<CommitDetail, GitHubError>> {
+    if (!this.isValidRepositoryFormat(repository)) {
+      return err({
+        type: 'NOT_FOUND',
+        repository,
+      });
+    }
+
+    const [owner, repo] = repository.split('/');
+
+    try {
+      const response = await this.executeWithRetry(() =>
+        this.client.get<RawGitHubCommit>(`/repos/${owner}/${repo}/commits/${sha}`)
+      );
+
+      const raw = response.data;
+      return ok({
+        sha: raw.sha,
+        message: raw.commit.message,
+        author: raw.commit.author,
+        stats: {
+          additions: raw.stats?.additions || 0,
+          deletions: raw.stats?.deletions || 0,
+          filesChanged: raw.files?.length || 0,
+        },
+        files: (raw.files || []).map((f) => ({
+          filename: f.filename,
+          status: f.status,
+          additions: f.additions,
+          deletions: f.deletions,
+          patch: f.patch,
+        })),
       });
     } catch (error) {
       return this.handleError(error, repository);
