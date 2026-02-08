@@ -157,10 +157,14 @@ export class ActivityAnalyzer {
         highlights.push(`${commit.repository}: ${commit.message}`);
       }
 
-      // Add time entry highlights
+      // Add time entry highlights (consolidate same description)
+      const entryMap = new Map<string, number>();
       for (const entry of dayEntries) {
-        const hours = (entry.durationSeconds / 3600).toFixed(1);
-        highlights.push(`${entry.projectName}: ${entry.description} (${hours}h)`);
+        const key = `${entry.projectName}: ${entry.description}`;
+        entryMap.set(key, (entryMap.get(key) || 0) + entry.durationSeconds / 3600);
+      }
+      for (const [desc, hours] of [...entryMap.entries()].sort((a, b) => b[1] - a[1])) {
+        highlights.push(`${desc} (${hours.toFixed(1)}h)`);
       }
 
       const summary = this.buildDaySummary(ds.commitCount, ds.workHours, ds.projects);

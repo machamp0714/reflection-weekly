@@ -160,9 +160,8 @@ export class ReflectionPageBuilder {
         const totalHours = entries.reduce((sum, e) => sum + e.durationSeconds / 3600, 0);
         lines.push(`### ${project} (${totalHours.toFixed(1)}h)`);
         lines.push('');
-        for (const entry of entries) {
-          const hours = (entry.durationSeconds / 3600).toFixed(1);
-          lines.push(`- ${entry.description}: ${hours}h`);
+        for (const [desc, hours] of this.consolidateTimeEntries(entries)) {
+          lines.push(`- ${desc}: ${hours.toFixed(1)}h`);
         }
         lines.push('');
       }
@@ -295,11 +294,10 @@ export class ReflectionPageBuilder {
       for (const [project, entries] of projectMap) {
         const totalHours = entries.reduce((sum, e) => sum + e.durationSeconds / 3600, 0);
         blocks.push({ type: 'heading_3', content: `${project} (${totalHours.toFixed(1)}h)` });
-        for (const entry of entries) {
-          const hours = (entry.durationSeconds / 3600).toFixed(1);
+        for (const [desc, hours] of this.consolidateTimeEntries(entries)) {
           blocks.push({
             type: 'bulleted_list_item',
-            content: `${entry.description}: ${hours}h`,
+            content: `${desc}: ${hours.toFixed(1)}h`,
           });
         }
       }
@@ -382,6 +380,21 @@ export class ReflectionPageBuilder {
       },
       blocks,
     };
+  }
+
+  /**
+   * Consolidate time entries with the same description, summing their hours.
+   * Returns [description, totalHours][] sorted by totalHours descending.
+   */
+  private consolidateTimeEntries(
+    entries: readonly { durationSeconds: number; description: string }[]
+  ): [string, number][] {
+    const map = new Map<string, number>();
+    for (const entry of entries) {
+      const desc = entry.description || '(説明なし)';
+      map.set(desc, (map.get(desc) || 0) + entry.durationSeconds / 3600);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }
 
   /**
