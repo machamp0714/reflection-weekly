@@ -288,5 +288,200 @@ describe('OpenAIClient', () => {
         expect(result.error.type).toBe('SERVICE_UNAVAILABLE');
       }
     });
+
+    it('500エラーの場合SERVICE_UNAVAILABLEを返す', async () => {
+      const error = new Error('Internal Server Error');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: { status: 500, data: { error: { message: 'Server error' } } },
+      });
+
+      // リトライ後も失敗
+      mockPost.mockRejectedValue(error);
+
+      const input: SummaryInput = {
+        commits: [],
+        timeEntries: [],
+        period: { start: '2026-01-27', end: '2026-02-02' },
+      };
+
+      const result = await client.generateSummary(input);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('SERVICE_UNAVAILABLE');
+      }
+    }, 30000);
+
+    it('CONTENT_FILTEREDエラーを正しく分類する', async () => {
+      const error = new Error('Content filtered');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: {
+          status: 400,
+          data: { error: { message: 'content_filter triggered' } },
+        },
+      });
+
+      mockPost.mockRejectedValueOnce(error);
+
+      const input: SummaryInput = {
+        commits: [],
+        timeEntries: [],
+        period: { start: '2026-01-27', end: '2026-02-02' },
+      };
+
+      const result = await client.generateSummary(input);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('CONTENT_FILTERED');
+      }
+    });
+
+    it('TOKEN_LIMIT_EXCEEDEDエラーを正しく分類する', async () => {
+      const error = new Error('Token limit');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: {
+          status: 400,
+          data: { error: { message: 'maximum context length exceeded' } },
+        },
+      });
+
+      mockPost.mockRejectedValueOnce(error);
+
+      const input: SummaryInput = {
+        commits: [],
+        timeEntries: [],
+        period: { start: '2026-01-27', end: '2026-02-02' },
+      };
+
+      const result = await client.generateSummary(input);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        // "length"を含むので TOKEN_LIMIT_EXCEEDED
+        expect(result.error.type).toBe('TOKEN_LIMIT_EXCEEDED');
+      }
+    });
+
+    it('非Axiosエラーの場合SERVICE_UNAVAILABLEを返す', async () => {
+      const genericError = new Error('Something unexpected');
+
+      mockPost.mockRejectedValueOnce(genericError);
+
+      const input: SummaryInput = {
+        commits: [],
+        timeEntries: [],
+        period: { start: '2026-01-27', end: '2026-02-02' },
+      };
+
+      const result = await client.generateSummary(input);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('SERVICE_UNAVAILABLE');
+        expect(result.error.message).toBe('Something unexpected');
+      }
+    });
+  });
+
+  describe('カスタムモデル設定', () => {
+    it('デフォルトモデル（gpt-4o）を使用する', async () => {
+      const mockResponse = {
+        data: {
+          id: 'chatcmpl-130',
+          choices: [
+            {
+              message: { role: 'assistant', content: 'Summary text' },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
+        },
+      };
+
+      mockPost.mockResolvedValueOnce(mockResponse);
+
+      const input: SummaryInput = {
+        commits: [],
+        timeEntries: [],
+        period: { start: '2026-01-27', end: '2026-02-02' },
+      };
+
+      await client.generateSummary(input);
+
+      expect(mockPost).toHaveBeenCalledWith(
+        '/chat/completions',
+        expect.objectContaining({
+          model: 'gpt-4o',
+        })
+      );
+    });
+
+    it('カスタムモデルを指定できる', async () => {
+      vi.clearAllMocks();
+      const customClient = new OpenAIClient({ apiKey: 'sk-test', model: 'gpt-4-turbo' });
+      const mockAxiosCreate = axios.create as ReturnType<typeof vi.fn>;
+      const mockInstance = mockAxiosCreate.mock.results[0]?.value as { post: ReturnType<typeof vi.fn> };
+      const customMockPost = mockInstance.post;
+
+      const mockResponse = {
+        data: {
+          id: 'chatcmpl-131',
+          choices: [
+            {
+              message: { role: 'assistant', content: 'Summary text' },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
+        },
+      };
+
+      customMockPost.mockResolvedValueOnce(mockResponse);
+
+      const input: SummaryInput = {
+        commits: [],
+        timeEntries: [],
+        period: { start: '2026-01-27', end: '2026-02-02' },
+      };
+
+      await customClient.generateSummary(input);
+
+      expect(customMockPost).toHaveBeenCalledWith(
+        '/chat/completions',
+        expect.objectContaining({
+          model: 'gpt-4-turbo',
+        })
+      );
+    });
+  });
+
+  describe('KPTサマリー生成のフォールバック', () => {
+    it('OpenAI API障害時にデフォルトKPTを返す（フォールバック）', async () => {
+      const error = new Error('Service error');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: { status: 503, data: {} },
+      });
+
+      // リトライ後も失敗
+      mockPost.mockRejectedValue(error);
+
+      const input: KPTInput = {
+        weekSummary: 'Summary',
+        highlights: ['highlight1'],
+      };
+
+      const result = await client.generateKPTSuggestions(input);
+
+      // KPT生成はサービス障害時にはエラーを返す（フォールバックはActivityAnalyzer側）
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('SERVICE_UNAVAILABLE');
+      }
+    }, 30000);
   });
 });

@@ -239,4 +239,114 @@ describe('FileLogger', () => {
       expect(logContent).toContain('debug info');
     });
   });
+
+  describe('warnメソッド', () => {
+    it('警告メッセージをログファイルに出力する', () => {
+      const logger = new FileLogger({ logFilePath, logLevel: 'info' });
+
+      logger.warn('exec-warn-1', 'API応答が遅延しています', { latency: 5000 });
+
+      const logContent = fs.readFileSync(logFilePath, 'utf-8');
+      expect(logContent).toContain('exec-warn-1');
+      expect(logContent).toContain('API');
+      expect(logContent).toContain('5000');
+    });
+
+    it('警告メッセージ内の機密情報をマスクする', () => {
+      const logger = new FileLogger({ logFilePath, logLevel: 'info' });
+
+      logger.warn('exec-warn-2', 'Token ghp_1234567890abcdef1234567890abcdef12345678 is invalid');
+
+      const logContent = fs.readFileSync(logFilePath, 'utf-8');
+      expect(logContent).not.toContain('ghp_1234567890abcdef1234567890abcdef12345678');
+      expect(logContent).toContain('***');
+    });
+  });
+
+  describe('getRecentLogs - エッジケース', () => {
+    it('ログファイルが存在しない場合は空配列を返す', () => {
+      const nonExistentPath = path.join(tempDir, 'non_existent.log');
+      const logger = new FileLogger({ logFilePath: nonExistentPath, logLevel: 'info' });
+
+      // ファイルが存在しないことを確認（constructorでは作成されないケースをシミュレート）
+      if (fs.existsSync(nonExistentPath)) {
+        fs.unlinkSync(nonExistentPath);
+      }
+
+      const logs = logger.getRecentLogs(10);
+      expect(logs).toEqual([]);
+    });
+
+    it('limitが1の場合は最新の1件のみ返す', () => {
+      const logger = new FileLogger({ logFilePath, logLevel: 'info' });
+
+      logger.logExecutionStart({
+        executionId: 'exec-a',
+        scheduledTime: new Date(),
+        triggerType: 'manual',
+      });
+      logger.logExecutionStart({
+        executionId: 'exec-b',
+        scheduledTime: new Date(),
+        triggerType: 'scheduled',
+      });
+
+      const logs = logger.getRecentLogs(1);
+      expect(logs.length).toBe(1);
+      expect(logs[0].executionId).toBe('exec-b');
+    });
+  });
+
+  describe('ログレベルフィルタリング', () => {
+    it('warnレベルではinfoメッセージを出力しない', () => {
+      const logger = new FileLogger({ logFilePath, logLevel: 'warn' });
+
+      logger.logExecutionStart({
+        executionId: 'exec-info',
+        scheduledTime: new Date(),
+        triggerType: 'manual',
+      });
+
+      // warnレベルではinfoメッセージは出力されない
+      if (fs.existsSync(logFilePath)) {
+        const logContent = fs.readFileSync(logFilePath, 'utf-8');
+        expect(logContent).not.toContain('exec-info');
+      }
+    });
+
+    it('errorレベルではerrorメッセージを出力する', () => {
+      const logger = new FileLogger({ logFilePath, logLevel: 'error' });
+
+      logger.logExecutionError({
+        executionId: 'exec-err',
+        duration: 1000,
+        error: {
+          type: 'TEST_ERROR',
+          message: 'Test error message',
+        },
+      });
+
+      const logContent = fs.readFileSync(logFilePath, 'utf-8');
+      expect(logContent).toContain('exec-err');
+      expect(logContent).toContain('Test error message');
+    });
+  });
+
+  describe('機密情報マスキングパターン', () => {
+    it('Notion secretトークンをマスクする', () => {
+      const logger = new FileLogger({ logFilePath, logLevel: 'info' });
+
+      logger.logExecutionError({
+        executionId: 'exec-mask-1',
+        duration: 1000,
+        error: {
+          type: 'AUTH_ERROR',
+          message: 'Invalid token: secret_abcdefghij1234567890',
+        },
+      });
+
+      const logContent = fs.readFileSync(logFilePath, 'utf-8');
+      expect(logContent).not.toContain('secret_abcdefghij1234567890');
+    });
+  });
 });

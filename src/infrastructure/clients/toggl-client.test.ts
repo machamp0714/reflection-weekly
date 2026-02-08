@@ -262,4 +262,104 @@ describe('TogglClient', () => {
       }
     });
   });
+
+  describe('NETWORK_ERRORハンドリング', () => {
+    it('非Axiosエラーの場合NETWORK_ERRORを返す', async () => {
+      const genericError = new Error('Connection refused');
+
+      mockGet.mockRejectedValueOnce(genericError);
+
+      const result = await client.getTimeEntries(testDateRange);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('NETWORK_ERROR');
+        expect(result.error.message).toBe('Connection refused');
+      }
+    });
+  });
+
+  describe('403エラーハンドリング', () => {
+    it('403レスポンスの場合UNAUTHORIZEDエラーを返す', async () => {
+      const error = new Error('Forbidden');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: { status: 403, data: {} },
+      });
+
+      mockGet.mockRejectedValueOnce(error);
+
+      const result = await client.getTimeEntries(testDateRange);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('UNAUTHORIZED');
+      }
+    });
+  });
+
+  describe('description nullハンドリング', () => {
+    it('descriptionがnullの場合は空文字列に変換する', async () => {
+      const mockEntries = [
+        {
+          id: 1,
+          description: null,
+          start: '2026-01-28T09:00:00Z',
+          stop: '2026-01-28T12:00:00Z',
+          duration: 10800,
+          project_id: null,
+          workspace_id: 456,
+          tags: null,
+          billable: false,
+        },
+      ];
+
+      mockGet.mockResolvedValueOnce({ data: mockEntries, headers: {} });
+
+      const result = await client.getTimeEntries(testDateRange);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value[0].description).toBe('');
+        expect(result.value[0].tags).toEqual([]);
+      }
+    });
+  });
+
+  describe('リトライ処理', () => {
+    it('500エラー後にリトライして成功する', async () => {
+      const serverError = new Error('Internal Server Error');
+      Object.assign(serverError, {
+        isAxiosError: true,
+        response: { status: 500, data: {} },
+      });
+
+      const mockEntries = [
+        {
+          id: 1,
+          description: 'Work',
+          start: '2026-01-28T09:00:00Z',
+          stop: '2026-01-28T12:00:00Z',
+          duration: 10800,
+          project_id: null,
+          workspace_id: 456,
+          tags: [],
+          billable: false,
+        },
+      ];
+
+      // 1回目は500、2回目は成功
+      mockGet
+        .mockRejectedValueOnce(serverError)
+        .mockResolvedValueOnce({ data: mockEntries, headers: {} });
+
+      const result = await client.getTimeEntries(testDateRange);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value).toHaveLength(1);
+      }
+      expect(mockGet).toHaveBeenCalledTimes(2);
+    }, 30000);
+  });
 });

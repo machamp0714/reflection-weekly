@@ -6,7 +6,8 @@ describe('ConfigManager', () => {
 
   beforeEach(() => {
     vi.resetModules();
-    process.env = { ...originalEnv };
+    // 完全にクリーンな環境変数で開始（テスト分離のため）
+    process.env = {};
   });
 
   afterEach(() => {
@@ -189,6 +190,220 @@ describe('ConfigManager', () => {
         expect(masked.toggl.apiToken).toBe('togg***'); // toggl_test_token contains _
         expect(masked.notion.token).toBe('secr***'); // secret_notion_token contains _
         expect(masked.openai.apiKey).toBe('sk-t***'); // sk-test-key contains -
+      }
+    });
+
+    it('短いトークンを完全にマスクする', () => {
+      const manager = new ConfigManager();
+      const config: AppConfig = {
+        github: { token: 'abc', repositories: ['repo'] },
+        toggl: { apiToken: 'xyz' },
+        notion: { token: 'short', databaseId: 'db' },
+        openai: { apiKey: '12345', model: 'gpt-4o' },
+        reflection: { defaultPeriodDays: 7 },
+        schedule: { cronExpression: '0 19 * * 0', timezone: 'Asia/Tokyo', enabled: false },
+        logging: { logFilePath: '/tmp/test.log', logLevel: 'info', maxLogFiles: 10, maxLogSize: '10MB' },
+      };
+
+      const masked = manager.maskSensitiveData(config);
+      // 6文字以下のトークンは全て'***'にマスクされる
+      expect(masked.github.token).toBe('***');
+      expect(masked.toggl.apiToken).toBe('***');
+      expect(masked.notion.token).toBe('***');
+      expect(masked.openai.apiKey).toBe('***');
+    });
+  });
+
+  describe('load - GITHUB_REPOSITORIES必須チェック', () => {
+    it('GITHUB_REPOSITORIESが空の場合にエラーを返す', () => {
+      process.env.GITHUB_TOKEN = 'ghp_test_token';
+      process.env.GITHUB_REPOSITORIES = '';
+      process.env.TOGGL_API_TOKEN = 'toggl_test_token';
+      process.env.NOTION_TOKEN = 'secret_notion_token';
+      process.env.NOTION_DATABASE_ID = 'notion_db_id';
+      process.env.OPENAI_API_KEY = 'sk-test-key';
+
+      const manager = new ConfigManager();
+      const result = manager.load();
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('MISSING_REQUIRED');
+        expect(result.error.missingFields).toContain('GITHUB_REPOSITORIES');
+      }
+    });
+
+    it('GITHUB_REPOSITORIESが未設定の場合にエラーを返す', () => {
+      process.env.GITHUB_TOKEN = 'ghp_test_token';
+      process.env.TOGGL_API_TOKEN = 'toggl_test_token';
+      process.env.NOTION_TOKEN = 'secret_notion_token';
+      process.env.NOTION_DATABASE_ID = 'notion_db_id';
+      process.env.OPENAI_API_KEY = 'sk-test-key';
+      // GITHUB_REPOSITORIES を設定しない
+
+      const manager = new ConfigManager();
+      const result = manager.load();
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.missingFields).toContain('GITHUB_REPOSITORIES');
+      }
+    });
+  });
+
+  describe('load - スケジュール設定', () => {
+    it('SCHEDULE_TIMEZONE のオーバーライド', () => {
+      process.env.GITHUB_TOKEN = 'ghp_test_token';
+      process.env.GITHUB_REPOSITORIES = 'owner/repo1';
+      process.env.TOGGL_API_TOKEN = 'toggl_test_token';
+      process.env.NOTION_TOKEN = 'secret_notion_token';
+      process.env.NOTION_DATABASE_ID = 'notion_db_id';
+      process.env.OPENAI_API_KEY = 'sk-test-key';
+      process.env.SCHEDULE_TIMEZONE = 'US/Pacific';
+      process.env.SCHEDULE_ENABLED = 'true';
+
+      const manager = new ConfigManager();
+      const result = manager.load();
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.schedule.timezone).toBe('US/Pacific');
+        expect(result.value.schedule.enabled).toBe(true);
+      }
+    });
+
+    it('SCHEDULE_NOTIFICATION_URL が設定される', () => {
+      process.env.GITHUB_TOKEN = 'ghp_test_token';
+      process.env.GITHUB_REPOSITORIES = 'owner/repo1';
+      process.env.TOGGL_API_TOKEN = 'toggl_test_token';
+      process.env.NOTION_TOKEN = 'secret_notion_token';
+      process.env.NOTION_DATABASE_ID = 'notion_db_id';
+      process.env.OPENAI_API_KEY = 'sk-test-key';
+      process.env.SCHEDULE_NOTIFICATION_URL = 'https://hooks.slack.com/test';
+
+      const manager = new ConfigManager();
+      const result = manager.load();
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.schedule.notificationUrl).toBe('https://hooks.slack.com/test');
+      }
+    });
+  });
+
+  describe('load - ログ設定', () => {
+    it('LOG_FILE_PATH のオーバーライド', () => {
+      process.env.GITHUB_TOKEN = 'ghp_test_token';
+      process.env.GITHUB_REPOSITORIES = 'owner/repo1';
+      process.env.TOGGL_API_TOKEN = 'toggl_test_token';
+      process.env.NOTION_TOKEN = 'secret_notion_token';
+      process.env.NOTION_DATABASE_ID = 'notion_db_id';
+      process.env.OPENAI_API_KEY = 'sk-test-key';
+      process.env.LOG_FILE_PATH = '/var/log/reflection.log';
+      process.env.LOG_MAX_FILES = '20';
+      process.env.LOG_MAX_SIZE = '50MB';
+
+      const manager = new ConfigManager();
+      const result = manager.load();
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.logging.logFilePath).toBe('/var/log/reflection.log');
+        expect(result.value.logging.maxLogFiles).toBe(20);
+        expect(result.value.logging.maxLogSize).toBe('50MB');
+      }
+    });
+
+    it('無効なLOG_LEVELの場合デフォルト値を使用する', () => {
+      process.env.GITHUB_TOKEN = 'ghp_test_token';
+      process.env.GITHUB_REPOSITORIES = 'owner/repo1';
+      process.env.TOGGL_API_TOKEN = 'toggl_test_token';
+      process.env.NOTION_TOKEN = 'secret_notion_token';
+      process.env.NOTION_DATABASE_ID = 'notion_db_id';
+      process.env.OPENAI_API_KEY = 'sk-test-key';
+      process.env.LOG_LEVEL = 'invalid_level';
+
+      const manager = new ConfigManager();
+      const result = manager.load();
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.logging.logLevel).toBe('info');
+      }
+    });
+  });
+
+  describe('load - 数値パース', () => {
+    it('無効な数値文字列の場合はデフォルト値を使用する', () => {
+      process.env.GITHUB_TOKEN = 'ghp_test_token';
+      process.env.GITHUB_REPOSITORIES = 'owner/repo1';
+      process.env.TOGGL_API_TOKEN = 'toggl_test_token';
+      process.env.NOTION_TOKEN = 'secret_notion_token';
+      process.env.NOTION_DATABASE_ID = 'notion_db_id';
+      process.env.OPENAI_API_KEY = 'sk-test-key';
+      process.env.REFLECTION_DEFAULT_PERIOD_DAYS = 'not_a_number';
+      process.env.TOGGL_WORKSPACE_ID = 'abc';
+
+      const manager = new ConfigManager();
+      const result = manager.load();
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.reflection.defaultPeriodDays).toBe(7);
+        expect(result.value.toggl.workspaceId).toBeUndefined();
+      }
+    });
+  });
+
+  describe('validate - 不足フィールドの詳細', () => {
+    it('全ての必須フィールドが不足している場合に全項目を返す', () => {
+      const manager = new ConfigManager();
+      const result = manager.validate({});
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('MISSING_REQUIRED');
+        expect(result.error.missingFields).toContain('github.token');
+        expect(result.error.missingFields).toContain('github.repositories');
+        expect(result.error.missingFields).toContain('toggl.apiToken');
+        expect(result.error.missingFields).toContain('notion.token');
+        expect(result.error.missingFields).toContain('notion.databaseId');
+        expect(result.error.missingFields).toContain('openai.apiKey');
+      }
+    });
+
+    it('validate時にデフォルト値を適用する', () => {
+      const manager = new ConfigManager();
+      const result = manager.validate({
+        github: { token: 'test', repositories: ['repo'] },
+        toggl: { apiToken: 'test' },
+        notion: { token: 'test', databaseId: 'test' },
+        openai: { apiKey: 'test' },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.openai.model).toBe('gpt-4o');
+        expect(result.value.reflection.defaultPeriodDays).toBe(7);
+        expect(result.value.schedule.cronExpression).toBe('0 19 * * 0');
+        expect(result.value.schedule.timezone).toBe('Asia/Tokyo');
+        expect(result.value.logging.logLevel).toBe('info');
+        expect(result.value.logging.maxLogFiles).toBe(10);
+      }
+    });
+
+    it('空のリポジトリリストでバリデーションエラーを返す', () => {
+      const manager = new ConfigManager();
+      const result = manager.validate({
+        github: { token: 'test', repositories: [] },
+        toggl: { apiToken: 'test' },
+        notion: { token: 'test', databaseId: 'test' },
+        openai: { apiKey: 'test' },
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.missingFields).toContain('github.repositories');
       }
     });
   });

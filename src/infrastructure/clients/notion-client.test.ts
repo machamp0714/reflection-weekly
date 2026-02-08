@@ -279,4 +279,139 @@ describe('NotionClient', () => {
       }
     });
   });
+
+  describe('RATE_LIMITEDエラー', () => {
+    it('429レスポンスの場合RATE_LIMITEDエラーを返す', async () => {
+      const error = new Error('Too Many Requests');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: {
+          status: 429,
+          data: { message: 'Rate limit exceeded' },
+          headers: { 'retry-after': '30' },
+        },
+      });
+
+      // リトライ後も失敗
+      mockPost.mockRejectedValue(error);
+
+      const content: NotionPageContent = {
+        title: 'Test',
+        properties: { weekNumber: 1, dateRange: '', tags: [] },
+        blocks: [],
+      };
+
+      const result = await client.createPage(content, 'database-123');
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('RATE_LIMITED');
+        if (result.error.type === 'RATE_LIMITED') {
+          expect(result.error.retryAfter).toBe(30);
+        }
+      }
+    }, 30000);
+  });
+
+  describe('SERVICE_UNAVAILABLEエラー', () => {
+    it('500レスポンスの場合SERVICE_UNAVAILABLEエラーを返す', async () => {
+      const error = new Error('Internal Server Error');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: { status: 500, data: { message: 'Internal error' } },
+      });
+
+      // リトライ後も失敗
+      mockPost.mockRejectedValue(error);
+
+      const content: NotionPageContent = {
+        title: 'Test',
+        properties: { weekNumber: 1, dateRange: '', tags: [] },
+        blocks: [],
+      };
+
+      const result = await client.createPage(content, 'database-123');
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('SERVICE_UNAVAILABLE');
+      }
+    }, 30000);
+
+    it('非Axiosエラーの場合SERVICE_UNAVAILABLEを返す', async () => {
+      const genericError = new Error('Unexpected failure');
+
+      mockPost.mockRejectedValueOnce(genericError);
+
+      const content: NotionPageContent = {
+        title: 'Test',
+        properties: { weekNumber: 1, dateRange: '', tags: [] },
+        blocks: [],
+      };
+
+      const result = await client.createPage(content, 'database-123');
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('SERVICE_UNAVAILABLE');
+        expect(result.error.message).toBe('Unexpected failure');
+      }
+    });
+  });
+
+  describe('Markdownフォールバック', () => {
+    it('Notion API障害時にcreatePageがエラーを返す（フォールバックはPageBuilder側）', async () => {
+      const error = new Error('Service Unavailable');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: { status: 503, data: { message: 'Service down' } },
+      });
+
+      // リトライ後も失敗
+      mockPost.mockRejectedValue(error);
+
+      const content: NotionPageContent = {
+        title: 'Week 5: 2026-01-27 - 2026-02-02',
+        properties: {
+          weekNumber: 5,
+          dateRange: '2026-01-27 - 2026-02-02',
+          tags: ['weekly-reflection'],
+          commitCount: 10,
+          workHours: 35,
+          aiEnabled: true,
+        },
+        blocks: [
+          { type: 'heading_1', content: 'Weekly Summary' },
+          { type: 'paragraph', content: 'This week was productive.' },
+        ],
+      };
+
+      const result = await client.createPage(content, 'database-123');
+
+      expect(result.success).toBe(false);
+      // エラーが返されることで、PageBuilder側がMarkdownフォールバックを実行可能
+      if (!result.success) {
+        expect(result.error.type).toBe('SERVICE_UNAVAILABLE');
+      }
+    }, 30000);
+  });
+
+  describe('queryDatabaseエラーハンドリング', () => {
+    it('queryDatabaseで404の場合DATABASE_NOT_FOUNDを返す', async () => {
+      const error = new Error('Not found');
+      Object.assign(error, {
+        isAxiosError: true,
+        response: { status: 404, data: { message: 'Database not found' } },
+      });
+
+      mockPost.mockRejectedValueOnce(error);
+
+      const result = await client.queryDatabase('invalid-db-id');
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('DATABASE_NOT_FOUND');
+      }
+    });
+  });
 });
