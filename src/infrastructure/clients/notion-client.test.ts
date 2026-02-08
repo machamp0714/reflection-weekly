@@ -57,7 +57,7 @@ describe('NotionClient', () => {
           weekNumber: 5,
           dateRange: '2026-01-27 - 2026-02-02',
           tags: ['weekly-reflection', 'auto-generated'],
-          prCount:25,
+          prCount: 25,
           workHours: 40,
           aiEnabled: true,
         },
@@ -78,6 +78,18 @@ describe('NotionClient', () => {
         expect(result.value.id).toBe('page-123');
         expect(result.value.url).toBe('https://notion.so/page-123');
       }
+
+      // プロパティのマッピングを検証
+      const requestBody = mockPost.mock.calls[0][1];
+      expect(requestBody.properties['日付']).toEqual({
+        date: { start: '2026-01-27', end: '2026-02-02' },
+      });
+      expect(requestBody.properties['コミット数']).toEqual({ number: 25 });
+      expect(requestBody.properties['作業時間']).toEqual({ number: 40 });
+      // 存在しないプロパティは送信されない
+      expect(requestBody.properties['Week Number']).toBeUndefined();
+      expect(requestBody.properties['Tags']).toBeUndefined();
+      expect(requestBody.properties['AI Enabled']).toBeUndefined();
     });
 
     it('should handle toggle blocks with children', async () => {

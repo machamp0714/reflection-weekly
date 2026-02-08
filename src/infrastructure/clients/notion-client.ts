@@ -118,6 +118,8 @@ export class NotionClient {
     });
   }
 
+  private readonly maxBlocksPerRequest = 100;
+
   /**
    * Create a page in a database
    */
@@ -126,7 +128,18 @@ export class NotionClient {
     databaseId: string
   ): Promise<Result<NotionPage, NotionError>> {
     try {
-      const requestBody = this.buildCreatePageRequest(content, databaseId);
+      const allBlocks = this.buildBlocks(content.blocks);
+      const firstBatch = allBlocks.slice(0, this.maxBlocksPerRequest);
+      const remainingBatches = this.chunkArray(
+        allBlocks.slice(this.maxBlocksPerRequest),
+        this.maxBlocksPerRequest
+      );
+
+      const requestBody: NotionCreatePageRequest = {
+        parent: { database_id: databaseId },
+        properties: this.buildProperties(content),
+        children: firstBatch,
+      };
 
       const response = await this.executeWithRateLimit(() =>
         this.executeWithRetry(() =>
@@ -134,8 +147,20 @@ export class NotionClient {
         )
       );
 
+      const pageId = response.data.id;
+
+      for (const batch of remainingBatches) {
+        await this.executeWithRateLimit(() =>
+          this.executeWithRetry(() =>
+            this.client.patch(`/blocks/${pageId}/children`, {
+              children: batch,
+            })
+          )
+        );
+      }
+
       return ok({
-        id: response.data.id,
+        id: pageId,
         url: response.data.url,
         createdTime: response.data.created_time,
         properties: response.data.properties,
@@ -204,15 +229,12 @@ export class NotionClient {
     }
   }
 
-  private buildCreatePageRequest(
-    content: NotionPageContent,
-    databaseId: string
-  ): NotionCreatePageRequest {
-    return {
-      parent: { database_id: databaseId },
-      properties: this.buildProperties(content),
-      children: this.buildBlocks(content.blocks),
-    };
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
   }
 
   private buildProperties(content: NotionPageContent): Record<string, unknown> {
@@ -222,45 +244,28 @@ export class NotionClient {
       },
     };
 
-    // Week Number
-    if (content.properties.weekNumber) {
-      properties['Week Number'] = {
-        number: content.properties.weekNumber,
-      };
-    }
-
-    // Date Range (as rich text)
+    // 日付 (Date)
     if (content.properties.dateRange) {
-      properties['Date Range'] = {
-        rich_text: [{ text: { content: content.properties.dateRange } }],
+      const dates = content.properties.dateRange.split(' - ');
+      properties['日付'] = {
+        date: {
+          start: dates[0],
+          ...(dates[1] ? { end: dates[1] } : {}),
+        },
       };
     }
 
-    // Tags
-    if (content.properties.tags.length > 0) {
-      properties['Tags'] = {
-        multi_select: content.properties.tags.map((tag) => ({ name: tag })),
-      };
-    }
-
-    // PR Count
+    // コミット数 (PR Count)
     if (content.properties.prCount !== undefined) {
-      properties['PR Count'] = {
+      properties['コミット数'] = {
         number: content.properties.prCount,
       };
     }
 
-    // Work Hours
+    // 作業時間 (Work Hours)
     if (content.properties.workHours !== undefined) {
-      properties['Work Hours'] = {
+      properties['作業時間'] = {
         number: content.properties.workHours,
-      };
-    }
-
-    // AI Enabled
-    if (content.properties.aiEnabled !== undefined) {
-      properties['AI Enabled'] = {
-        checkbox: content.properties.aiEnabled,
       };
     }
 
