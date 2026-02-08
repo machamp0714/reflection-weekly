@@ -2,7 +2,7 @@ import axios, { AxiosInstance, isAxiosError } from 'axios';
 import { Result, ok, err } from '../../types/result.js';
 
 /**
- * Date range for filtering commits
+ * Date range for filtering pull requests
  */
 export interface DateRange {
   readonly start: Date;
@@ -10,64 +10,27 @@ export interface DateRange {
 }
 
 /**
- * GitHub commit data
+ * GitHub Pull Request data
  */
-export interface GitHubCommit {
-  readonly sha: string;
-  readonly message: string;
-  readonly author: {
-    readonly name: string;
-    readonly email: string;
-    readonly date: string;
+export interface GitHubPullRequest {
+  readonly number: number;
+  readonly title: string;
+  readonly body: string | null;
+  readonly user: {
+    readonly login: string;
   };
+  readonly createdAt: string;
   readonly url: string;
-  readonly stats?: {
-    readonly additions: number;
-    readonly deletions: number;
-    readonly total: number;
-  };
+  readonly htmlUrl: string;
+  readonly state: 'open' | 'closed';
+  readonly merged: boolean;
 }
 
 /**
- * Commit stats
+ * Options for getPullRequests
  */
-export interface CommitStats {
-  readonly additions: number;
-  readonly deletions: number;
-  readonly filesChanged: number;
-}
-
-/**
- * File change detail with optional patch
- */
-export interface FileChange {
-  readonly filename: string;
-  readonly status: string;
-  readonly additions: number;
-  readonly deletions: number;
-  readonly patch?: string;
-}
-
-/**
- * Commit detail with file changes and patches
- */
-export interface CommitDetail {
-  readonly sha: string;
-  readonly message: string;
-  readonly author: {
-    readonly name: string;
-    readonly email: string;
-    readonly date: string;
-  };
-  readonly stats: CommitStats;
-  readonly files: readonly FileChange[];
-}
-
-/**
- * Options for getCommits
- */
-export interface GetCommitsOptions {
-  readonly author?: string;
+export interface GetPullRequestsOptions {
+  readonly state?: 'open' | 'closed' | 'all';
   readonly perPage?: number;
 }
 
@@ -89,35 +52,24 @@ export interface GitHubClientConfig {
 }
 
 /**
- * Raw GitHub API commit response
+ * Raw GitHub API pull request response
  */
-interface RawGitHubCommit {
-  sha: string;
-  commit: {
-    message: string;
-    author: {
-      name: string;
-      email: string;
-      date: string;
-    };
+interface RawGitHubPullRequest {
+  number: number;
+  title: string;
+  body: string | null;
+  user: {
+    login: string;
   };
+  created_at: string;
+  url: string;
   html_url: string;
-  stats?: {
-    additions: number;
-    deletions: number;
-    total: number;
-  };
-  files?: Array<{
-    filename: string;
-    status: string;
-    additions: number;
-    deletions: number;
-    patch?: string;
-  }>;
+  state: 'open' | 'closed';
+  merged_at: string | null;
 }
 
 /**
- * GitHub REST API Client
+ * GitHub REST API Client - Pull Requests
  */
 export class GitHubClient {
   private readonly client: AxiosInstance;
@@ -137,13 +89,13 @@ export class GitHubClient {
   }
 
   /**
-   * Get commits for a repository within a date range
+   * Get pull requests for a repository within a date range
    */
-  async getCommits(
+  async getPullRequests(
     repository: string,
     dateRange: DateRange,
-    options?: GetCommitsOptions
-  ): Promise<Result<readonly GitHubCommit[], GitHubError>> {
+    options?: GetPullRequestsOptions
+  ): Promise<Result<readonly GitHubPullRequest[], GitHubError>> {
     // Validate repository format
     if (!this.isValidRepositoryFormat(repository)) {
       return err({
@@ -153,162 +105,98 @@ export class GitHubClient {
     }
 
     const [owner, repo] = repository.split('/');
-    const allCommits: GitHubCommit[] = [];
+    const allPRs: GitHubPullRequest[] = [];
     let page = 1;
     const perPage = options?.perPage || 100;
+    const state = options?.state || 'all';
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const result = await this.fetchCommitsPage(
+      const result = await this.fetchPullRequestsPage(
         owner,
         repo,
-        dateRange,
+        state,
         page,
-        perPage,
-        options?.author
+        perPage
       );
 
       if (!result.success) {
         return result;
       }
 
-      const { commits, hasNextPage } = result.value;
-      allCommits.push(...commits);
+      const { pullRequests, hasNextPage } = result.value;
 
-      if (!hasNextPage || commits.length < perPage) {
+      // Filter PRs by date range (client-side filtering since Pulls API doesn't support since/until)
+      for (const pr of pullRequests) {
+        const createdAt = new Date(pr.createdAt);
+        if (createdAt >= dateRange.start && createdAt <= dateRange.end) {
+          allPRs.push(pr);
+        }
+      }
+
+      // Stop pagination if we've gone past the date range (PRs sorted by created desc)
+      // If the oldest PR on this page is before the start date, no need to fetch more
+      if (pullRequests.length > 0) {
+        const oldestPR = pullRequests[pullRequests.length - 1];
+        const oldestCreatedAt = new Date(oldestPR.createdAt);
+        if (oldestCreatedAt < dateRange.start) {
+          break;
+        }
+      }
+
+      if (!hasNextPage || pullRequests.length < perPage) {
         break;
       }
 
       page++;
     }
 
-    return ok(allCommits);
+    return ok(allPRs);
   }
 
-  /**
-   * Get commit stats for a specific commit
-   */
-  async getCommitStats(
-    repository: string,
-    sha: string
-  ): Promise<Result<CommitStats, GitHubError>> {
-    if (!this.isValidRepositoryFormat(repository)) {
-      return err({
-        type: 'NOT_FOUND',
-        repository,
-      });
-    }
-
-    const [owner, repo] = repository.split('/');
-
-    try {
-      const response = await this.executeWithRetry(() =>
-        this.client.get<RawGitHubCommit>(`/repos/${owner}/${repo}/commits/${sha}`)
-      );
-
-      const commit = response.data;
-      return ok({
-        additions: commit.stats?.additions || 0,
-        deletions: commit.stats?.deletions || 0,
-        filesChanged: commit.files?.length || 0,
-      });
-    } catch (error) {
-      return this.handleError(error, repository);
-    }
-  }
-
-  /**
-   * Get full commit detail including file changes and patches
-   */
-  async getCommitDetail(
-    repository: string,
-    sha: string
-  ): Promise<Result<CommitDetail, GitHubError>> {
-    if (!this.isValidRepositoryFormat(repository)) {
-      return err({
-        type: 'NOT_FOUND',
-        repository,
-      });
-    }
-
-    const [owner, repo] = repository.split('/');
-
-    try {
-      const response = await this.executeWithRetry(() =>
-        this.client.get<RawGitHubCommit>(`/repos/${owner}/${repo}/commits/${sha}`)
-      );
-
-      const raw = response.data;
-      return ok({
-        sha: raw.sha,
-        message: raw.commit.message,
-        author: raw.commit.author,
-        stats: {
-          additions: raw.stats?.additions || 0,
-          deletions: raw.stats?.deletions || 0,
-          filesChanged: raw.files?.length || 0,
-        },
-        files: (raw.files || []).map((f) => ({
-          filename: f.filename,
-          status: f.status,
-          additions: f.additions,
-          deletions: f.deletions,
-          patch: f.patch,
-        })),
-      });
-    } catch (error) {
-      return this.handleError(error, repository);
-    }
-  }
-
-  private async fetchCommitsPage(
+  private async fetchPullRequestsPage(
     owner: string,
     repo: string,
-    dateRange: DateRange,
+    state: 'open' | 'closed' | 'all',
     page: number,
-    perPage: number,
-    author?: string
-  ): Promise<Result<{ commits: GitHubCommit[]; hasNextPage: boolean }, GitHubError>> {
+    perPage: number
+  ): Promise<Result<{ pullRequests: GitHubPullRequest[]; hasNextPage: boolean }, GitHubError>> {
     try {
       const response = await this.executeWithRetry(() =>
-        this.client.get<RawGitHubCommit[]>(`/repos/${owner}/${repo}/commits`, {
+        this.client.get<RawGitHubPullRequest[]>(`/repos/${owner}/${repo}/pulls`, {
           params: {
-            since: dateRange.start.toISOString(),
-            until: dateRange.end.toISOString(),
+            state,
+            sort: 'created',
+            direction: 'desc',
             per_page: perPage,
             page,
-            ...(author ? { author } : {}),
           },
         })
       );
 
-      const commits = response.data.map((raw) => this.mapCommit(raw));
+      const pullRequests = response.data.map((raw) => this.mapPullRequest(raw));
       const linkHeader = response.headers['link'] as string | undefined;
       const hasNextPage = linkHeader?.includes('rel="next"') || false;
 
-      return ok({ commits, hasNextPage });
+      return ok({ pullRequests, hasNextPage });
     } catch (error) {
       return this.handleError(error, `${owner}/${repo}`);
     }
   }
 
-  private mapCommit(raw: RawGitHubCommit): GitHubCommit {
+  private mapPullRequest(raw: RawGitHubPullRequest): GitHubPullRequest {
     return {
-      sha: raw.sha,
-      message: raw.commit.message,
-      author: {
-        name: raw.commit.author.name,
-        email: raw.commit.author.email,
-        date: raw.commit.author.date,
+      number: raw.number,
+      title: raw.title,
+      body: raw.body,
+      user: {
+        login: raw.user.login,
       },
-      url: raw.html_url,
-      stats: raw.stats
-        ? {
-            additions: raw.stats.additions,
-            deletions: raw.stats.deletions,
-            total: raw.stats.total,
-          }
-        : undefined,
+      createdAt: raw.created_at,
+      url: raw.url,
+      htmlUrl: raw.html_url,
+      state: raw.state,
+      merged: raw.merged_at !== null,
     };
   }
 

@@ -1,10 +1,9 @@
 export {
   GitHubClient,
   type GitHubClientConfig,
-  type GitHubCommit,
+  type GitHubPullRequest,
   type GitHubError,
-  type GetCommitsOptions,
-  type CommitStats,
+  type GetPullRequestsOptions,
   type DateRange,
 } from './github-client.js';
 export {

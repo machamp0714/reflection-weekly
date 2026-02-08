@@ -38,104 +38,214 @@ describe('GitHubClient', () => {
     mockGet = mockInstance.get;
   });
 
-  describe('getCommits', () => {
-    it('should fetch commits for a repository within date range', async () => {
-      const mockCommits = [
+  describe('getPullRequests', () => {
+    it('should fetch pull requests for a repository within date range', async () => {
+      const mockPRs = [
         {
-          sha: 'abc123',
-          commit: {
-            message: 'feat: add new feature',
-            author: {
-              name: 'Test User',
-              email: 'test@example.com',
-              date: '2026-01-28T10:00:00Z',
-            },
-          },
-          html_url: 'https://github.com/owner/repo/commit/abc123',
-          stats: {
-            additions: 100,
-            deletions: 20,
-            total: 120,
-          },
+          number: 42,
+          title: 'feat: add new feature',
+          body: 'This PR adds a new feature for users.',
+          user: { login: 'testuser' },
+          created_at: '2026-01-28T10:00:00Z',
+          url: 'https://api.github.com/repos/owner/repo/pulls/42',
+          html_url: 'https://github.com/owner/repo/pull/42',
+          state: 'open',
+          merged_at: null,
         },
         {
-          sha: 'def456',
-          commit: {
-            message: 'fix: resolve bug',
-            author: {
-              name: 'Test User',
-              email: 'test@example.com',
-              date: '2026-01-29T14:30:00Z',
-            },
-          },
-          html_url: 'https://github.com/owner/repo/commit/def456',
+          number: 43,
+          title: 'fix: resolve bug',
+          body: 'Fixes issue #100',
+          user: { login: 'testuser' },
+          created_at: '2026-01-29T14:30:00Z',
+          url: 'https://api.github.com/repos/owner/repo/pulls/43',
+          html_url: 'https://github.com/owner/repo/pull/43',
+          state: 'closed',
+          merged_at: '2026-01-30T10:00:00Z',
         },
       ];
 
       mockGet.mockResolvedValueOnce({
-        data: mockCommits,
+        data: mockPRs,
         headers: {},
       });
 
-      const result = await client.getCommits('owner/repo', testDateRange);
+      const result = await client.getPullRequests('owner/repo', testDateRange);
 
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.value).toHaveLength(2);
-        expect(result.value[0].sha).toBe('abc123');
-        expect(result.value[0].message).toBe('feat: add new feature');
-        expect(result.value[1].sha).toBe('def456');
+        expect(result.value[0].number).toBe(42);
+        expect(result.value[0].title).toBe('feat: add new feature');
+        expect(result.value[0].body).toBe('This PR adds a new feature for users.');
+        expect(result.value[0].state).toBe('open');
+        expect(result.value[0].merged).toBe(false);
+        expect(result.value[0].htmlUrl).toBe('https://github.com/owner/repo/pull/42');
+        expect(result.value[0].user.login).toBe('testuser');
+        expect(result.value[0].createdAt).toBe('2026-01-28T10:00:00Z');
+        expect(result.value[1].number).toBe(43);
+        expect(result.value[1].merged).toBe(true);
+      }
+    });
+
+    it('should filter PRs by date range (only PRs created within range)', async () => {
+      const mockPRs = [
+        {
+          number: 41,
+          title: 'old PR before date range',
+          body: null,
+          user: { login: 'testuser' },
+          created_at: '2026-01-20T10:00:00Z',
+          url: 'https://api.github.com/repos/owner/repo/pulls/41',
+          html_url: 'https://github.com/owner/repo/pull/41',
+          state: 'closed',
+          merged_at: null,
+        },
+        {
+          number: 42,
+          title: 'PR within date range',
+          body: 'In range',
+          user: { login: 'testuser' },
+          created_at: '2026-01-28T10:00:00Z',
+          url: 'https://api.github.com/repos/owner/repo/pulls/42',
+          html_url: 'https://github.com/owner/repo/pull/42',
+          state: 'open',
+          merged_at: null,
+        },
+        {
+          number: 44,
+          title: 'PR after date range',
+          body: 'After range',
+          user: { login: 'testuser' },
+          created_at: '2026-02-10T10:00:00Z',
+          url: 'https://api.github.com/repos/owner/repo/pulls/44',
+          html_url: 'https://github.com/owner/repo/pull/44',
+          state: 'open',
+          merged_at: null,
+        },
+      ];
+
+      mockGet.mockResolvedValueOnce({
+        data: mockPRs,
+        headers: {},
+      });
+
+      const result = await client.getPullRequests('owner/repo', testDateRange);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        // Only the PR within the date range should remain
+        expect(result.value).toHaveLength(1);
+        expect(result.value[0].number).toBe(42);
       }
     });
 
     it('should handle pagination with link header', async () => {
-      const page1Commits = Array(100)
+      const page1PRs = Array(100)
         .fill(null)
         .map((_, i) => ({
-          sha: `sha1_${i}`,
-          commit: {
-            message: `Commit ${i}`,
-            author: {
-              name: 'Test User',
-              email: 'test@example.com',
-              date: '2026-01-28T10:00:00Z',
-            },
-          },
-          html_url: `https://github.com/owner/repo/commit/sha1_${i}`,
+          number: i + 1,
+          title: `PR ${i + 1}`,
+          body: `Description for PR ${i + 1}`,
+          user: { login: 'testuser' },
+          created_at: '2026-01-28T10:00:00Z',
+          url: `https://api.github.com/repos/owner/repo/pulls/${i + 1}`,
+          html_url: `https://github.com/owner/repo/pull/${i + 1}`,
+          state: 'open',
+          merged_at: null,
         }));
 
-      const page2Commits = Array(10)
+      const page2PRs = Array(10)
         .fill(null)
         .map((_, i) => ({
-          sha: `sha2_${i}`,
-          commit: {
-            message: `Commit ${100 + i}`,
-            author: {
-              name: 'Test User',
-              email: 'test@example.com',
-              date: '2026-01-29T10:00:00Z',
-            },
-          },
-          html_url: `https://github.com/owner/repo/commit/sha2_${i}`,
+          number: 101 + i,
+          title: `PR ${101 + i}`,
+          body: `Description for PR ${101 + i}`,
+          user: { login: 'testuser' },
+          created_at: '2026-01-29T10:00:00Z',
+          url: `https://api.github.com/repos/owner/repo/pulls/${101 + i}`,
+          html_url: `https://github.com/owner/repo/pull/${101 + i}`,
+          state: 'closed',
+          merged_at: null,
         }));
 
       mockGet
         .mockResolvedValueOnce({
-          data: page1Commits,
-          headers: { link: '<https://api.github.com/repos/owner/repo/commits?page=2>; rel="next"' },
+          data: page1PRs,
+          headers: { link: '<https://api.github.com/repos/owner/repo/pulls?page=2>; rel="next"' },
         })
         .mockResolvedValueOnce({
-          data: page2Commits,
+          data: page2PRs,
           headers: {},
         });
 
-      const result = await client.getCommits('owner/repo', testDateRange);
+      const result = await client.getPullRequests('owner/repo', testDateRange);
 
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.value).toHaveLength(110);
       }
       expect(mockGet).toHaveBeenCalledTimes(2);
+    });
+
+    it('should fetch PRs with all states by default', async () => {
+      mockGet.mockResolvedValueOnce({
+        data: [],
+        headers: {},
+      });
+
+      await client.getPullRequests('owner/repo', testDateRange);
+
+      expect(mockGet).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/pulls'),
+        expect.objectContaining({
+          params: expect.objectContaining({ state: 'all' }),
+        })
+      );
+    });
+
+    it('should allow specifying PR state filter', async () => {
+      mockGet.mockResolvedValueOnce({
+        data: [],
+        headers: {},
+      });
+
+      await client.getPullRequests('owner/repo', testDateRange, { state: 'closed' });
+
+      expect(mockGet).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/pulls'),
+        expect.objectContaining({
+          params: expect.objectContaining({ state: 'closed' }),
+        })
+      );
+    });
+
+    it('should handle PR with null body', async () => {
+      const mockPRs = [
+        {
+          number: 42,
+          title: 'PR with no body',
+          body: null,
+          user: { login: 'testuser' },
+          created_at: '2026-01-28T10:00:00Z',
+          url: 'https://api.github.com/repos/owner/repo/pulls/42',
+          html_url: 'https://github.com/owner/repo/pull/42',
+          state: 'open',
+          merged_at: null,
+        },
+      ];
+
+      mockGet.mockResolvedValueOnce({
+        data: mockPRs,
+        headers: {},
+      });
+
+      const result = await client.getPullRequests('owner/repo', testDateRange);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value[0].body).toBeNull();
+      }
     });
 
     it('should return UNAUTHORIZED error for 401 response', async () => {
@@ -147,7 +257,7 @@ describe('GitHubClient', () => {
 
       mockGet.mockRejectedValueOnce(error);
 
-      const result = await client.getCommits('owner/repo', testDateRange);
+      const result = await client.getPullRequests('owner/repo', testDateRange);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -168,7 +278,7 @@ describe('GitHubClient', () => {
 
       mockGet.mockRejectedValueOnce(error);
 
-      const result = await client.getCommits('owner/repo', testDateRange);
+      const result = await client.getPullRequests('owner/repo', testDateRange);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -185,7 +295,7 @@ describe('GitHubClient', () => {
 
       mockGet.mockRejectedValueOnce(error);
 
-      const result = await client.getCommits('owner/nonexistent', testDateRange);
+      const result = await client.getPullRequests('owner/nonexistent', testDateRange);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -203,7 +313,7 @@ describe('GitHubClient', () => {
 
       mockGet.mockRejectedValueOnce(error);
 
-      const result = await client.getCommits('owner/repo', testDateRange);
+      const result = await client.getPullRequests('owner/repo', testDateRange);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -211,89 +321,141 @@ describe('GitHubClient', () => {
       }
     });
 
-    it('should filter commits by author when provided', async () => {
-      const mockCommits = [
-        {
-          sha: 'abc123',
-          commit: {
-            message: 'test',
-            author: { name: 'Test', email: 'test@example.com', date: '2026-01-28T10:00:00Z' },
-          },
-          html_url: 'https://github.com/owner/repo/commit/abc123',
-        },
-      ];
-
-      mockGet.mockResolvedValueOnce({
-        data: mockCommits,
-        headers: {},
-      });
-
-      const result = await client.getCommits('owner/repo', testDateRange, { author: 'testuser' });
-
-      expect(result.success).toBe(true);
-      expect(mockGet).toHaveBeenCalledWith(
-        expect.stringContaining('/repos/owner/repo/commits'),
-        expect.objectContaining({
-          params: expect.objectContaining({ author: 'testuser' }),
-        })
-      );
-    });
-
-    it('should return empty array when no commits exist', async () => {
+    it('should return empty array when no PRs exist', async () => {
       mockGet.mockResolvedValueOnce({
         data: [],
         headers: {},
       });
 
-      const result = await client.getCommits('owner/repo', testDateRange);
+      const result = await client.getPullRequests('owner/repo', testDateRange);
 
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.value).toHaveLength(0);
       }
     });
-  });
 
-  describe('getCommitStats', () => {
-    it('should fetch commit stats when available', async () => {
-      const mockCommit = {
-        sha: 'abc123',
-        commit: {
-          message: 'test',
-          author: { name: 'Test', email: 'test@example.com', date: '2026-01-28T10:00:00Z' },
-        },
-        html_url: 'https://github.com/owner/repo/commit/abc123',
-        stats: {
-          additions: 50,
-          deletions: 10,
-          total: 60,
-        },
-        files: [{ filename: 'src/index.ts', additions: 50, deletions: 10 }],
-      };
-
+    it('should sort PRs by created_at descending', async () => {
       mockGet.mockResolvedValueOnce({
-        data: mockCommit,
+        data: [],
         headers: {},
       });
 
-      const result = await client.getCommitStats('owner/repo', 'abc123');
+      await client.getPullRequests('owner/repo', testDateRange);
 
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.value.additions).toBe(50);
-        expect(result.value.deletions).toBe(10);
-        expect(result.value.filesChanged).toBe(1);
-      }
+      expect(mockGet).toHaveBeenCalledWith(
+        expect.stringContaining('/repos/owner/repo/pulls'),
+        expect.objectContaining({
+          params: expect.objectContaining({
+            sort: 'created',
+            direction: 'desc',
+          }),
+        })
+      );
     });
   });
 
   describe('repository name validation', () => {
     it('should reject invalid repository format', async () => {
-      const result = await client.getCommits('invalidrepo', testDateRange);
+      const result = await client.getPullRequests('invalidrepo', testDateRange);
 
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.type).toBe('NOT_FOUND');
+      }
+    });
+
+    it('空のowner/repoを拒否する', async () => {
+      const result = await client.getPullRequests('/repo', testDateRange);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('NOT_FOUND');
+      }
+    });
+
+    it('空のrepo名を拒否する', async () => {
+      const result = await client.getPullRequests('owner/', testDateRange);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('NOT_FOUND');
+      }
+    });
+  });
+
+  describe('リトライ処理', () => {
+    it('503エラー後にリトライして成功する', async () => {
+      const serverError = new Error('Service Unavailable');
+      Object.assign(serverError, {
+        isAxiosError: true,
+        response: { status: 503, data: { message: 'Service Unavailable' } },
+      });
+
+      const mockPRs = [
+        {
+          number: 42,
+          title: 'feat: add feature',
+          body: 'PR body',
+          user: { login: 'testuser' },
+          created_at: '2026-01-28T10:00:00Z',
+          url: 'https://api.github.com/repos/owner/repo/pulls/42',
+          html_url: 'https://github.com/owner/repo/pull/42',
+          state: 'open',
+          merged_at: null,
+        },
+      ];
+
+      // 1回目は503、2回目は成功
+      mockGet
+        .mockRejectedValueOnce(serverError)
+        .mockResolvedValueOnce({ data: mockPRs, headers: {} });
+
+      const result = await client.getPullRequests('owner/repo', testDateRange);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value).toHaveLength(1);
+        expect(result.value[0].number).toBe(42);
+      }
+      // リトライが発生したため2回呼ばれる
+      expect(mockGet).toHaveBeenCalledTimes(2);
+    }, 30000);
+
+    it('非Axiosエラーの場合NETWORK_ERRORを返す', async () => {
+      const genericError = new Error('Something went wrong');
+
+      mockGet.mockRejectedValueOnce(genericError);
+
+      const result = await client.getPullRequests('owner/repo', testDateRange);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('NETWORK_ERROR');
+        expect(result.error.message).toBe('Something went wrong');
+      }
+    });
+  });
+
+  describe('403エラーの分類', () => {
+    it('レート制限以外の403はUNAUTHORIZEDとして扱う', async () => {
+      const forbiddenError = new Error('Forbidden');
+      Object.assign(forbiddenError, {
+        isAxiosError: true,
+        response: {
+          status: 403,
+          data: { message: 'Resource not accessible' },
+          headers: {},
+        },
+      });
+
+      mockGet.mockRejectedValueOnce(forbiddenError);
+
+      const result = await client.getPullRequests('owner/repo', testDateRange);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('UNAUTHORIZED');
       }
     });
   });

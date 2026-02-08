@@ -99,7 +99,7 @@ export interface ReflectionOptions {
  */
 export interface ExecutionSummary {
   readonly dateRange: DateRange;
-  readonly commitCount: number;
+  readonly prCount: number;
   readonly timeEntryCount: number;
   readonly totalWorkHours: number;
   readonly aiAnalysisEnabled: boolean;
@@ -254,7 +254,7 @@ export class ReflectionUseCase {
         preview,
         summary: {
           dateRange: options.dateRange,
-          commitCount: integratedData.commits.length,
+          prCount: integratedData.pullRequests.length,
           timeEntryCount: integratedData.timeEntries.length,
           totalWorkHours,
           aiAnalysisEnabled: analysis.aiEnabled,
@@ -272,7 +272,7 @@ export class ReflectionUseCase {
         pageUrl: pageResult.value.pageUrl,
         summary: {
           dateRange: options.dateRange,
-          commitCount: integratedData.commits.length,
+          prCount: integratedData.pullRequests.length,
           timeEntryCount: integratedData.timeEntries.length,
           totalWorkHours,
           aiAnalysisEnabled: analysis.aiEnabled,
@@ -297,7 +297,7 @@ export class ReflectionUseCase {
       localFilePath,
       summary: {
         dateRange: options.dateRange,
-        commitCount: integratedData.commits.length,
+        prCount: integratedData.pullRequests.length,
         timeEntryCount: integratedData.timeEntries.length,
         totalWorkHours,
         aiAnalysisEnabled: analysis.aiEnabled,

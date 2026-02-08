@@ -15,7 +15,7 @@ export interface DailyAnalysis {
  * Weekly comparison
  */
 export interface WeeklyComparison {
-  readonly commitDelta: number;
+  readonly prDelta: number;
   readonly workHoursDelta: number;
   readonly trend: 'increasing' | 'decreasing' | 'stable';
 }
@@ -69,7 +69,7 @@ export interface IOpenAIClient {
  *
  * Responsibilities:
  * - OpenAI APIを使用した活動サマリー生成
- * - コミット数と作業時間の相関分析
+ * - PR数と作業時間の相関分析
  * - KPT（Keep/Problem/Try）提案の自動生成
  * - OpenAI API障害時の基本サマリーフォールバック
  */
@@ -143,8 +143,8 @@ export class ActivityAnalyzer {
    */
   private generateDailyAnalyses(data: IntegratedData): DailyAnalysis[] {
     return data.dailySummaries.map((ds) => {
-      const dayCommits = data.commits.filter(
-        (c) => this.getDateKey(c.authorDate) === this.getDateKey(ds.date)
+      const dayPRs = data.pullRequests.filter(
+        (pr) => this.getDateKey(pr.createdAt) === this.getDateKey(ds.date)
       );
       const dayEntries = data.timeEntries.filter(
         (e) => this.getDateKey(e.startTime) === this.getDateKey(ds.date)
@@ -152,9 +152,9 @@ export class ActivityAnalyzer {
 
       const highlights: string[] = [];
 
-      // Add commit highlights
-      for (const commit of dayCommits) {
-        highlights.push(`${commit.repository}: ${commit.message}`);
+      // Add PR highlights
+      for (const pr of dayPRs) {
+        highlights.push(`${pr.repository}: ${pr.title}`);
       }
 
       // Add time entry highlights (consolidate same description)
@@ -167,7 +167,7 @@ export class ActivityAnalyzer {
         highlights.push(`${desc} (${hours.toFixed(1)}h)`);
       }
 
-      const summary = this.buildDaySummary(ds.commitCount, ds.workHours, ds.projects);
+      const summary = this.buildDaySummary(ds.prCount, ds.workHours, ds.projects);
 
       return {
         date: ds.date,
@@ -183,29 +183,29 @@ export class ActivityAnalyzer {
   private generateInsights(data: IntegratedData): string[] {
     const insights: string[] = [];
 
-    const totalCommits = data.commits.length;
+    const totalPRs = data.pullRequests.length;
     const totalWorkHours = data.timeEntries.reduce((sum, e) => sum + e.durationSeconds / 3600, 0);
 
-    if (totalCommits > 0) {
-      insights.push(`今週の総コミット数: ${totalCommits}件`);
+    if (totalPRs > 0) {
+      insights.push(`今週の総PR数: ${totalPRs}件`);
     }
 
     if (totalWorkHours > 0) {
       insights.push(`今週の総作業時間: ${totalWorkHours.toFixed(1)}時間`);
     }
 
-    if (totalCommits > 0 && totalWorkHours > 0) {
-      const commitsPerHour = totalCommits / totalWorkHours;
-      insights.push(`作業時間あたりのコミット数: ${commitsPerHour.toFixed(2)}件/時間`);
+    if (totalPRs > 0 && totalWorkHours > 0) {
+      const prsPerHour = totalPRs / totalWorkHours;
+      insights.push(`作業時間あたりのPR数: ${prsPerHour.toFixed(2)}件/時間`);
     }
 
     // Most active day
     if (data.dailySummaries.length > 0) {
       const mostActiveDay = [...data.dailySummaries].sort(
-        (a, b) => (b.commitCount + b.workHours) - (a.commitCount + a.workHours)
+        (a, b) => (b.prCount + b.workHours) - (a.prCount + a.workHours)
       )[0];
       const dayName = this.getDayName(mostActiveDay.date);
-      insights.push(`最も活動的な日: ${dayName}（コミット${mostActiveDay.commitCount}件、${mostActiveDay.workHours.toFixed(1)}h）`);
+      insights.push(`最も活動的な日: ${dayName}（PR${mostActiveDay.prCount}件、${mostActiveDay.workHours.toFixed(1)}h）`);
     }
 
     // Project diversity
@@ -226,10 +226,12 @@ export class ActivityAnalyzer {
   private extractHighlights(data: IntegratedData): string[] {
     const highlights: string[] = [];
 
-    // Top commits by size
-    const sortedCommits = [...data.commits].sort((a, b) => b.filesChanged - a.filesChanged);
-    for (const commit of sortedCommits.slice(0, 3)) {
-      highlights.push(`${commit.repository}: ${commit.message} (+${commit.additions}/-${commit.deletions})`);
+    // Top PRs (most recent)
+    const sortedPRs = [...data.pullRequests].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    );
+    for (const pr of sortedPRs.slice(0, 3)) {
+      highlights.push(`${pr.repository}: ${pr.title} (#${pr.number})`);
     }
 
     // Largest time entries
@@ -247,10 +249,10 @@ export class ActivityAnalyzer {
    */
   private buildSummaryInput(data: IntegratedData): SummaryInput {
     return {
-      commits: data.commits.map((c) => ({
-        message: c.message,
-        repository: c.repository,
-        date: c.authorDate.toISOString().split('T')[0],
+      commits: data.pullRequests.map((pr) => ({
+        message: pr.title,
+        repository: pr.repository,
+        date: pr.createdAt.toISOString().split('T')[0],
       })),
       timeEntries: data.timeEntries.map((e) => ({
         description: e.description,
@@ -268,18 +270,18 @@ export class ActivityAnalyzer {
    * Generate basic summary without AI (fallback)
    */
   private generateBasicSummary(data: IntegratedData): string {
-    const totalCommits = data.commits.length;
+    const totalPRs = data.pullRequests.length;
     const totalWorkHours = data.timeEntries.reduce((sum, e) => sum + e.durationSeconds / 3600, 0);
     const period = `${data.dateRange.start.toISOString().split('T')[0]} - ${data.dateRange.end.toISOString().split('T')[0]}`;
 
     const parts: string[] = [];
     parts.push(`期間: ${period}`);
 
-    if (totalCommits > 0) {
-      const repos = new Set(data.commits.map((c) => c.repository));
-      parts.push(`コミット: ${totalCommits}件（${repos.size}リポジトリ）`);
+    if (totalPRs > 0) {
+      const repos = new Set(data.pullRequests.map((pr) => pr.repository));
+      parts.push(`PR: ${totalPRs}件（${repos.size}リポジトリ）`);
     } else {
-      parts.push('コミット: なし');
+      parts.push('PR: なし');
     }
 
     if (totalWorkHours > 0) {
@@ -302,20 +304,20 @@ export class ActivityAnalyzer {
     const problem: string[] = [];
     const tryItems: string[] = [];
 
-    const totalCommits = data.commits.length;
+    const totalPRs = data.pullRequests.length;
     const totalWorkHours = data.timeEntries.reduce((sum, e) => sum + e.durationSeconds / 3600, 0);
 
-    if (totalCommits > 0) {
-      keep.push('コミットによる活動記録を継続できています');
+    if (totalPRs > 0) {
+      keep.push('PRによる活動記録を継続できています');
     }
 
     if (totalWorkHours > 0) {
       keep.push('Togglでの作業時間記録を継続できています');
     }
 
-    if (totalCommits === 0 && totalWorkHours === 0) {
+    if (totalPRs === 0 && totalWorkHours === 0) {
       problem.push('今週は活動データが記録されていません');
-      tryItems.push('日々の活動をGitHubコミットとTogglで記録しましょう');
+      tryItems.push('日々の活動をGitHub PRとTogglで記録しましょう');
     }
 
     if (data.dailySummaries.length < 3) {
@@ -350,21 +352,21 @@ export class ActivityAnalyzer {
       (sum, p) => sum + p.totalWorkHours,
       0
     );
-    const totalCommits = data.projectSummaries.reduce(
-      (sum, p) => sum + p.totalCommits,
+    const totalPRs = data.projectSummaries.reduce(
+      (sum, p) => sum + p.totalPRs,
       0
     );
-    const totalActivity = totalWorkHours + totalCommits;
+    const totalActivity = totalWorkHours + totalPRs;
 
     if (totalActivity === 0) {
       return undefined;
     }
 
     const projectDistribution: ProjectDistribution[] = data.projectSummaries
-      .filter((p) => p.totalWorkHours > 0 || p.totalCommits > 0)
+      .filter((p) => p.totalWorkHours > 0 || p.totalPRs > 0)
       .map((p) => ({
         projectName: p.projectName,
-        percentage: ((p.totalWorkHours + p.totalCommits) / totalActivity) * 100,
+        percentage: ((p.totalWorkHours + p.totalPRs) / totalActivity) * 100,
       }))
       .sort((a, b) => b.percentage - a.percentage);
 
@@ -376,11 +378,11 @@ export class ActivityAnalyzer {
   /**
    * Build a summary for a single day
    */
-  private buildDaySummary(commitCount: number, workHours: number, projects: readonly string[]): string {
+  private buildDaySummary(prCount: number, workHours: number, projects: readonly string[]): string {
     const parts: string[] = [];
 
-    if (commitCount > 0) {
-      parts.push(`${commitCount}件のコミット`);
+    if (prCount > 0) {
+      parts.push(`${prCount}件のPR`);
     }
 
     if (workHours > 0) {

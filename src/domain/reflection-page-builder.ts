@@ -121,28 +121,28 @@ export class ReflectionPageBuilder {
       lines.push('');
     }
 
-    // GitHub commit summary
-    lines.push('## GitHubコミットサマリー');
+    // GitHub PR summary
+    lines.push('## GitHub PRサマリー');
     lines.push('');
-    if (data.commits.length > 0) {
+    if (data.pullRequests.length > 0) {
       // Group by repository
-      const repoMap = new Map<string, typeof data.commits>();
-      for (const commit of data.commits) {
-        const existing = repoMap.get(commit.repository) || [];
-        repoMap.set(commit.repository, [...existing, commit]);
+      const repoMap = new Map<string, typeof data.pullRequests>();
+      for (const pr of data.pullRequests) {
+        const existing = repoMap.get(pr.repository) || [];
+        repoMap.set(pr.repository, [...existing, pr]);
       }
 
-      for (const [repo, commits] of repoMap) {
+      for (const [repo, prs] of repoMap) {
         lines.push(`### ${repo}`);
         lines.push('');
-        for (const commit of commits) {
-          const date = commit.authorDate.toISOString().split('T')[0];
-          lines.push(`- ${commit.message} (${date}) [+${commit.additions}/-${commit.deletions}]`);
+        for (const pr of prs) {
+          const date = pr.createdAt.toISOString().split('T')[0];
+          lines.push(`- #${pr.number} ${pr.title} (${date}) [${pr.state}]`);
         }
         lines.push('');
       }
     } else {
-      lines.push('該当期間のコミットはありません。');
+      lines.push('該当期間のPRはありません。');
       lines.push('');
     }
 
@@ -258,27 +258,27 @@ export class ReflectionPageBuilder {
       blocks.push({ type: 'divider' });
     }
 
-    // GitHub commit summary section
-    blocks.push({ type: 'heading_1', content: 'GitHubコミットサマリー' });
-    if (data.commits.length > 0) {
-      const repoMap = new Map<string, typeof data.commits>();
-      for (const commit of data.commits) {
-        const existing = repoMap.get(commit.repository) || [];
-        repoMap.set(commit.repository, [...existing, commit]);
+    // GitHub PR summary section
+    blocks.push({ type: 'heading_1', content: 'GitHub PRサマリー' });
+    if (data.pullRequests.length > 0) {
+      const repoMap = new Map<string, typeof data.pullRequests>();
+      for (const pr of data.pullRequests) {
+        const existing = repoMap.get(pr.repository) || [];
+        repoMap.set(pr.repository, [...existing, pr]);
       }
 
-      for (const [repo, commits] of repoMap) {
+      for (const [repo, prs] of repoMap) {
         blocks.push({ type: 'heading_3', content: repo });
-        for (const commit of commits) {
-          const date = commit.authorDate.toISOString().split('T')[0];
+        for (const pr of prs) {
+          const date = pr.createdAt.toISOString().split('T')[0];
           blocks.push({
             type: 'bulleted_list_item',
-            content: `${commit.message} (${date}) [+${commit.additions}/-${commit.deletions}]`,
+            content: `#${pr.number} ${pr.title} (${date}) [${pr.state}]`,
           });
         }
       }
     } else {
-      blocks.push({ type: 'paragraph', content: '該当期間のコミットはありません。' });
+      blocks.push({ type: 'paragraph', content: '該当期間のPRはありません。' });
     }
     blocks.push({ type: 'divider' });
 
@@ -374,7 +374,7 @@ export class ReflectionPageBuilder {
         weekNumber,
         dateRange: `${startStr} - ${endStr}`,
         tags: ['weekly-reflection', 'auto-generated'],
-        commitCount: data.commits.length,
+        prCount: data.pullRequests.length,
         workHours: Math.round(totalWorkHours * 10) / 10,
         aiEnabled: analysis.aiEnabled,
       },

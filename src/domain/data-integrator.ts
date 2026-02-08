@@ -1,5 +1,5 @@
 import { Result, ok, err } from '../types/result.js';
-import type { GitHubCommit } from '../infrastructure/clients/github-client.js';
+import type { GitHubPullRequest } from '../infrastructure/clients/github-client.js';
 import type { TogglTimeEntry } from '../infrastructure/clients/toggl-client.js';
 
 /**
@@ -19,16 +19,16 @@ export interface DataSourceConfig {
 }
 
 /**
- * Commit data in domain format
+ * Pull request data in domain format
  */
-export interface CommitData {
-  readonly sha: string;
-  readonly message: string;
-  readonly authorDate: Date;
+export interface PullRequestData {
+  readonly number: number;
+  readonly title: string;
+  readonly description: string;
+  readonly createdAt: Date;
   readonly repository: string;
-  readonly filesChanged: number;
-  readonly additions: number;
-  readonly deletions: number;
+  readonly url: string;
+  readonly state: 'open' | 'closed' | 'merged';
 }
 
 /**
@@ -49,7 +49,7 @@ export interface TimeEntryData {
  */
 export interface DailySummary {
   readonly date: Date;
-  readonly commitCount: number;
+  readonly prCount: number;
   readonly workHours: number;
   readonly projects: readonly string[];
 }
@@ -59,7 +59,7 @@ export interface DailySummary {
  */
 export interface ProjectSummary {
   readonly projectName: string;
-  readonly totalCommits: number;
+  readonly totalPRs: number;
   readonly totalWorkHours: number;
 }
 
@@ -67,7 +67,7 @@ export interface ProjectSummary {
  * Data warning types
  */
 export type DataWarning =
-  | { readonly type: 'NO_COMMITS'; readonly message: string }
+  | { readonly type: 'NO_PULL_REQUESTS'; readonly message: string }
   | { readonly type: 'NO_TIME_ENTRIES'; readonly message: string }
   | { readonly type: 'PARTIAL_DATA'; readonly source: string; readonly message: string };
 
@@ -92,7 +92,7 @@ export interface SourceError {
  */
 export interface IntegratedData {
   readonly dateRange: DateRange;
-  readonly commits: readonly CommitData[];
+  readonly pullRequests: readonly PullRequestData[];
   readonly timeEntries: readonly TimeEntryData[];
   readonly dailySummaries: readonly DailySummary[];
   readonly projectSummaries: readonly ProjectSummary[];
@@ -103,11 +103,11 @@ export interface IntegratedData {
  * GitHub client interface for dependency injection
  */
 export interface IGitHubClient {
-  getCommits(
+  getPullRequests(
     repository: string,
     dateRange: DateRange,
-    options?: { readonly author?: string; readonly perPage?: number }
-  ): Promise<Result<readonly GitHubCommit[], { readonly type: string; readonly message?: string; readonly repository?: string; readonly resetAt?: Date }>>;
+    options?: { readonly state?: 'open' | 'closed' | 'all'; readonly perPage?: number }
+  ): Promise<Result<readonly GitHubPullRequest[], { readonly type: string; readonly message?: string; readonly repository?: string; readonly resetAt?: Date }>>;
 }
 
 /**
@@ -145,27 +145,27 @@ export class DataIntegrator {
     const errors: SourceError[] = [];
 
     // Parallel collection from GitHub and Toggl
-    const [commitsResult, timeEntriesResult] = await Promise.all([
-      this.collectGitHubCommits(dateRange, config.repositories),
+    const [prsResult, timeEntriesResult] = await Promise.all([
+      this.collectGitHubPullRequests(dateRange, config.repositories),
       this.collectTogglTimeEntries(dateRange, config.workspaceId),
     ]);
 
     // Process GitHub results
-    let commits: CommitData[] = [];
-    if (commitsResult.success) {
-      commits = commitsResult.value;
-      if (commits.length === 0) {
+    let pullRequests: PullRequestData[] = [];
+    if (prsResult.success) {
+      pullRequests = prsResult.value;
+      if (pullRequests.length === 0) {
         warnings.push({
-          type: 'NO_COMMITS',
-          message: '該当期間のコミットはありません',
+          type: 'NO_PULL_REQUESTS',
+          message: '該当期間のPRはありません',
         });
       }
     } else {
-      errors.push({ source: 'github', message: commitsResult.error });
+      errors.push({ source: 'github', message: prsResult.error });
       warnings.push({
         type: 'PARTIAL_DATA',
         source: 'github',
-        message: `GitHubデータの取得に失敗しました: ${commitsResult.error}`,
+        message: `GitHubデータの取得に失敗しました: ${prsResult.error}`,
       });
     }
 
@@ -189,7 +189,7 @@ export class DataIntegrator {
     }
 
     // If all sources failed, return error
-    if (!commitsResult.success && !timeEntriesResult.success) {
+    if (!prsResult.success && !timeEntriesResult.success) {
       return err({
         type: 'ALL_SOURCES_FAILED',
         errors,
@@ -197,12 +197,12 @@ export class DataIntegrator {
     }
 
     // Generate summaries
-    const dailySummaries = this.generateDailySummaries(dateRange, commits, timeEntries);
-    const projectSummaries = this.generateProjectSummaries(commits, timeEntries);
+    const dailySummaries = this.generateDailySummaries(dateRange, pullRequests, timeEntries);
+    const projectSummaries = this.generateProjectSummaries(pullRequests, timeEntries);
 
     return ok({
       dateRange,
-      commits,
+      pullRequests,
       timeEntries,
       dailySummaries,
       projectSummaries,
@@ -211,25 +211,25 @@ export class DataIntegrator {
   }
 
   /**
-   * Collect commits from multiple repositories in parallel
+   * Collect pull requests from multiple repositories in parallel
    */
-  private async collectGitHubCommits(
+  private async collectGitHubPullRequests(
     dateRange: DateRange,
     repositories: readonly string[]
-  ): Promise<Result<CommitData[], string>> {
+  ): Promise<Result<PullRequestData[], string>> {
     const results = await Promise.all(
-      repositories.map((repo) => this.githubClient.getCommits(repo, dateRange))
+      repositories.map((repo) => this.githubClient.getPullRequests(repo, dateRange))
     );
 
-    const allCommits: CommitData[] = [];
+    const allPRs: PullRequestData[] = [];
     const errors: string[] = [];
 
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       const repo = repositories[i];
       if (result.success) {
-        const mapped = result.value.map((commit) => this.mapCommitData(commit, repo));
-        allCommits.push(...mapped);
+        const mapped = result.value.map((pr) => this.mapPullRequestData(pr, repo));
+        allPRs.push(...mapped);
       } else {
         errors.push(`${repo}: ${result.error.message || result.error.type}`);
       }
@@ -240,7 +240,7 @@ export class DataIntegrator {
       return err(errors.join('; '));
     }
 
-    return ok(allCommits);
+    return ok(allPRs);
   }
 
   /**
@@ -261,17 +261,24 @@ export class DataIntegrator {
   }
 
   /**
-   * Map GitHub commit to domain CommitData
+   * Map GitHub pull request to domain PullRequestData
    */
-  private mapCommitData(commit: GitHubCommit, repository: string): CommitData {
+  private mapPullRequestData(pr: GitHubPullRequest, repository: string): PullRequestData {
+    let state: 'open' | 'closed' | 'merged';
+    if (pr.merged) {
+      state = 'merged';
+    } else {
+      state = pr.state;
+    }
+
     return {
-      sha: commit.sha,
-      message: commit.message,
-      authorDate: new Date(commit.author.date),
+      number: pr.number,
+      title: pr.title,
+      description: pr.body || '',
+      createdAt: new Date(pr.createdAt),
       repository,
-      filesChanged: commit.stats?.total || 0,
-      additions: commit.stats?.additions || 0,
-      deletions: commit.stats?.deletions || 0,
+      url: pr.htmlUrl,
+      state,
     };
   }
 
@@ -297,26 +304,26 @@ export class DataIntegrator {
    */
   private generateDailySummaries(
     dateRange: DateRange,
-    commits: readonly CommitData[],
+    pullRequests: readonly PullRequestData[],
     timeEntries: readonly TimeEntryData[]
   ): DailySummary[] {
-    const summaryMap = new Map<string, { commitCount: number; workSeconds: number; projects: Set<string> }>();
+    const summaryMap = new Map<string, { prCount: number; workSeconds: number; projects: Set<string> }>();
 
     // Initialize days in range
     const current = new Date(dateRange.start);
     while (current <= dateRange.end) {
       const dateKey = this.getDateKey(current);
-      summaryMap.set(dateKey, { commitCount: 0, workSeconds: 0, projects: new Set() });
+      summaryMap.set(dateKey, { prCount: 0, workSeconds: 0, projects: new Set() });
       current.setDate(current.getDate() + 1);
     }
 
-    // Aggregate commits by day
-    for (const commit of commits) {
-      const dateKey = this.getDateKey(commit.authorDate);
+    // Aggregate pull requests by day
+    for (const pr of pullRequests) {
+      const dateKey = this.getDateKey(pr.createdAt);
       const summary = summaryMap.get(dateKey);
       if (summary) {
-        summary.commitCount++;
-        summary.projects.add(commit.repository);
+        summary.prCount++;
+        summary.projects.add(pr.repository);
       }
     }
 
@@ -333,10 +340,10 @@ export class DataIntegrator {
     // Convert to DailySummary array, filter out empty days
     const summaries: DailySummary[] = [];
     for (const [dateKey, data] of summaryMap) {
-      if (data.commitCount > 0 || data.workSeconds > 0) {
+      if (data.prCount > 0 || data.workSeconds > 0) {
         summaries.push({
           date: new Date(dateKey + 'T00:00:00Z'),
-          commitCount: data.commitCount,
+          prCount: data.prCount,
           workHours: data.workSeconds / 3600,
           projects: Array.from(data.projects),
         });
@@ -350,28 +357,28 @@ export class DataIntegrator {
    * Generate project summaries from integrated data
    */
   private generateProjectSummaries(
-    commits: readonly CommitData[],
+    pullRequests: readonly PullRequestData[],
     timeEntries: readonly TimeEntryData[]
   ): ProjectSummary[] {
-    const projectMap = new Map<string, { totalCommits: number; totalWorkSeconds: number }>();
+    const projectMap = new Map<string, { totalPRs: number; totalWorkSeconds: number }>();
 
-    // Aggregate commits by repository
-    for (const commit of commits) {
-      const existing = projectMap.get(commit.repository) || { totalCommits: 0, totalWorkSeconds: 0 };
-      existing.totalCommits++;
-      projectMap.set(commit.repository, existing);
+    // Aggregate pull requests by repository
+    for (const pr of pullRequests) {
+      const existing = projectMap.get(pr.repository) || { totalPRs: 0, totalWorkSeconds: 0 };
+      existing.totalPRs++;
+      projectMap.set(pr.repository, existing);
     }
 
     // Aggregate time entries by project
     for (const entry of timeEntries) {
-      const existing = projectMap.get(entry.projectName) || { totalCommits: 0, totalWorkSeconds: 0 };
+      const existing = projectMap.get(entry.projectName) || { totalPRs: 0, totalWorkSeconds: 0 };
       existing.totalWorkSeconds += entry.durationSeconds;
       projectMap.set(entry.projectName, existing);
     }
 
     return Array.from(projectMap.entries()).map(([name, data]) => ({
       projectName: name,
-      totalCommits: data.totalCommits,
+      totalPRs: data.totalPRs,
       totalWorkHours: data.totalWorkSeconds / 3600,
     }));
   }

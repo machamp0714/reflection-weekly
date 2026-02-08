@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ActivityAnalyzer } from './activity-analyzer.js';
 import { ok, err } from '../types/result.js';
-import type { IntegratedData, CommitData, TimeEntryData, DailySummary, ProjectSummary } from './data-integrator.js';
+import type { IntegratedData, PullRequestData, TimeEntryData, DailySummary, ProjectSummary } from './data-integrator.js';
 import type { KPTSuggestions, OpenAIError } from '../infrastructure/clients/openai-client.js';
 
 /**
  * ActivityAnalyzer テスト
- * Task 3.2: 活動分析機能のテスト
+ * Task 3.2: 活動分析機能のテスト (PR版)
  */
 
 // Mock OpenAI client
@@ -21,35 +21,35 @@ const createMockIntegratedData = (): IntegratedData => ({
     start: new Date('2026-01-27T00:00:00Z'),
     end: new Date('2026-02-02T23:59:59Z'),
   },
-  commits: [
+  pullRequests: [
     {
-      sha: 'abc123',
-      message: 'feat: add feature A',
-      authorDate: new Date('2026-01-28T10:00:00Z'),
+      number: 42,
+      title: 'feat: add feature A',
+      description: 'This PR adds feature A.',
+      createdAt: new Date('2026-01-28T10:00:00Z'),
       repository: 'owner/repo1',
-      filesChanged: 60,
-      additions: 50,
-      deletions: 10,
+      url: 'https://github.com/owner/repo1/pull/42',
+      state: 'merged',
     },
     {
-      sha: 'def456',
-      message: 'fix: bug fix B',
-      authorDate: new Date('2026-01-29T14:00:00Z'),
+      number: 43,
+      title: 'fix: bug fix B',
+      description: 'Fixes bug B.',
+      createdAt: new Date('2026-01-29T14:00:00Z'),
       repository: 'owner/repo1',
-      filesChanged: 8,
-      additions: 5,
-      deletions: 3,
+      url: 'https://github.com/owner/repo1/pull/43',
+      state: 'open',
     },
     {
-      sha: 'ghi789',
-      message: 'docs: update readme',
-      authorDate: new Date('2026-01-30T09:00:00Z'),
+      number: 10,
+      title: 'docs: update readme',
+      description: 'Updates readme.',
+      createdAt: new Date('2026-01-30T09:00:00Z'),
       repository: 'owner/repo2',
-      filesChanged: 2,
-      additions: 10,
-      deletions: 0,
+      url: 'https://github.com/owner/repo2/pull/10',
+      state: 'closed',
     },
-  ] as CommitData[],
+  ] as PullRequestData[],
   timeEntries: [
     {
       id: 1,
@@ -80,15 +80,15 @@ const createMockIntegratedData = (): IntegratedData => ({
     },
   ] as TimeEntryData[],
   dailySummaries: [
-    { date: new Date('2026-01-28'), commitCount: 1, workHours: 3.0, projects: ['owner/repo1', 'Project Alpha'] },
-    { date: new Date('2026-01-29'), commitCount: 1, workHours: 2.0, projects: ['owner/repo1', 'Project Alpha'] },
-    { date: new Date('2026-01-30'), commitCount: 1, workHours: 1.5, projects: ['owner/repo2', 'Project Beta'] },
+    { date: new Date('2026-01-28'), prCount: 1, workHours: 3.0, projects: ['owner/repo1', 'Project Alpha'] },
+    { date: new Date('2026-01-29'), prCount: 1, workHours: 2.0, projects: ['owner/repo1', 'Project Alpha'] },
+    { date: new Date('2026-01-30'), prCount: 1, workHours: 1.5, projects: ['owner/repo2', 'Project Beta'] },
   ] as DailySummary[],
   projectSummaries: [
-    { projectName: 'owner/repo1', totalCommits: 2, totalWorkHours: 0 },
-    { projectName: 'owner/repo2', totalCommits: 1, totalWorkHours: 0 },
-    { projectName: 'Project Alpha', totalCommits: 0, totalWorkHours: 5.0 },
-    { projectName: 'Project Beta', totalCommits: 0, totalWorkHours: 1.5 },
+    { projectName: 'owner/repo1', totalPRs: 2, totalWorkHours: 0 },
+    { projectName: 'owner/repo2', totalPRs: 1, totalWorkHours: 0 },
+    { projectName: 'Project Alpha', totalPRs: 0, totalWorkHours: 5.0 },
+    { projectName: 'Project Beta', totalPRs: 0, totalWorkHours: 1.5 },
   ] as ProjectSummary[],
   warnings: [],
 });
@@ -98,12 +98,12 @@ const createEmptyIntegratedData = (): IntegratedData => ({
     start: new Date('2026-01-27T00:00:00Z'),
     end: new Date('2026-02-02T23:59:59Z'),
   },
-  commits: [],
+  pullRequests: [],
   timeEntries: [],
   dailySummaries: [],
   projectSummaries: [],
   warnings: [
-    { type: 'NO_COMMITS', message: '該当期間のコミットはありません' },
+    { type: 'NO_PULL_REQUESTS', message: '該当期間のPRはありません' },
     { type: 'NO_TIME_ENTRIES', message: '該当期間の打刻データはありません' },
   ],
 });
@@ -122,11 +122,11 @@ describe('ActivityAnalyzer', () => {
       const data = createMockIntegratedData();
 
       mockOpenAIClient.generateSummary.mockResolvedValue(
-        ok('今週は3つのコミットと6.5時間の作業を実施しました。')
+        ok('今週は3つのPRと6.5時間の作業を実施しました。')
       );
       mockOpenAIClient.generateKPTSuggestions.mockResolvedValue(
         ok({
-          keep: ['継続的なコミット活動'],
+          keep: ['継続的なPR活動'],
           problem: ['作業時間が短い日がある'],
           tryItems: ['作業時間を均等に分配する'],
         } as KPTSuggestions)
@@ -137,7 +137,7 @@ describe('ActivityAnalyzer', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.value.aiEnabled).toBe(true);
-        expect(result.value.weekSummary).toBe('今週は3つのコミットと6.5時間の作業を実施しました。');
+        expect(result.value.weekSummary).toBe('今週は3つのPRと6.5時間の作業を実施しました。');
         expect(result.value.kptSuggestions.keep.length).toBeGreaterThan(0);
         expect(result.value.kptSuggestions.problem.length).toBeGreaterThan(0);
         expect(result.value.kptSuggestions.tryItems.length).toBeGreaterThan(0);
@@ -299,7 +299,7 @@ describe('ActivityAnalyzer', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         // Basic summary should include statistics
-        expect(result.value.weekSummary).toContain('3'); // commit count
+        expect(result.value.weekSummary).toContain('3'); // PR count
         expect(result.value.weekSummary).toContain('6.5'); // work hours
       }
     });

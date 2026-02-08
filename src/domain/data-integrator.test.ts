@@ -1,19 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DataIntegrator } from './data-integrator.js';
 import { ok, err } from '../types/result.js';
-import type { GitHubCommit, GitHubError } from '../infrastructure/clients/github-client.js';
+import type { GitHubPullRequest, GitHubError } from '../infrastructure/clients/github-client.js';
 import type { TogglTimeEntry, TogglError } from '../infrastructure/clients/toggl-client.js';
 import type { DateRange, DataSourceConfig } from './data-integrator.js';
 
 /**
  * DataIntegrator テスト
- * Task 3.1: データ統合機能のテスト
+ * Task 3.1: データ統合機能のテスト (PR版)
  */
 
 // Mock GitHub client
 const createMockGitHubClient = () => ({
-  getCommits: vi.fn(),
-  getCommitStats: vi.fn(),
+  getPullRequests: vi.fn(),
 });
 
 // Mock Toggl client
@@ -35,20 +34,28 @@ const createDataSourceConfig = (): DataSourceConfig => ({
   workspaceId: 12345,
 });
 
-const createMockCommits = (repoName: string): GitHubCommit[] => [
+const createMockPullRequests = (repoName: string): GitHubPullRequest[] => [
   {
-    sha: 'abc123',
-    message: 'feat: add feature A',
-    author: { name: 'Test User', email: 'test@example.com', date: '2026-01-28T10:00:00Z' },
-    url: `https://github.com/${repoName}/commit/abc123`,
-    stats: { additions: 50, deletions: 10, total: 60 },
+    number: 42,
+    title: 'feat: add feature A',
+    body: 'This PR adds feature A.',
+    user: { login: 'testuser' },
+    createdAt: '2026-01-28T10:00:00Z',
+    url: `https://api.github.com/repos/${repoName}/pulls/42`,
+    htmlUrl: `https://github.com/${repoName}/pull/42`,
+    state: 'closed',
+    merged: true,
   },
   {
-    sha: 'def456',
-    message: 'fix: bug fix B',
-    author: { name: 'Test User', email: 'test@example.com', date: '2026-01-29T14:00:00Z' },
-    url: `https://github.com/${repoName}/commit/def456`,
-    stats: { additions: 5, deletions: 3, total: 8 },
+    number: 43,
+    title: 'fix: bug fix B',
+    body: 'Fixes bug B.',
+    user: { login: 'testuser' },
+    createdAt: '2026-01-29T14:00:00Z',
+    url: `https://api.github.com/repos/${repoName}/pulls/43`,
+    htmlUrl: `https://github.com/${repoName}/pull/43`,
+    state: 'open',
+    merged: false,
   },
 ];
 
@@ -107,10 +114,10 @@ describe('DataIntegrator', () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      // Setup mocks: both repos return commits
-      mockGitHubClient.getCommits
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo1')))
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo2')));
+      // Setup mocks: both repos return PRs
+      mockGitHubClient.getPullRequests
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo1')))
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo2')));
 
       mockTogglClient.getTimeEntriesWithProjectNames
         .mockResolvedValue(ok(createMockTimeEntries()));
@@ -119,7 +126,7 @@ describe('DataIntegrator', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.value.commits.length).toBe(4); // 2 commits x 2 repos
+        expect(result.value.pullRequests.length).toBe(4); // 2 PRs x 2 repos
         expect(result.value.timeEntries.length).toBe(3);
         expect(result.value.dateRange).toEqual(dateRange);
         expect(result.value.warnings.length).toBe(0);
@@ -130,8 +137,8 @@ describe('DataIntegrator', () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      mockGitHubClient.getCommits
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo1')))
+      mockGitHubClient.getPullRequests
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo1')))
         .mockResolvedValueOnce(ok([]));
 
       mockTogglClient.getTimeEntriesWithProjectNames
@@ -143,13 +150,13 @@ describe('DataIntegrator', () => {
       if (result.success) {
         expect(result.value.dailySummaries.length).toBeGreaterThan(0);
 
-        // Check Jan 28 summary: 1 commit + 3h work
+        // Check Jan 28 summary: 1 PR + 3h work
         const jan28Summary = result.value.dailySummaries.find(
           (s) => s.date.toISOString().startsWith('2026-01-28')
         );
         expect(jan28Summary).toBeDefined();
         if (jan28Summary) {
-          expect(jan28Summary.commitCount).toBe(1);
+          expect(jan28Summary.prCount).toBe(1);
           expect(jan28Summary.workHours).toBeCloseTo(3.0, 1);
         }
       }
@@ -159,8 +166,8 @@ describe('DataIntegrator', () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      mockGitHubClient.getCommits
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo1')))
+      mockGitHubClient.getPullRequests
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo1')))
         .mockResolvedValueOnce(ok([]));
 
       mockTogglClient.getTimeEntriesWithProjectNames
@@ -186,7 +193,7 @@ describe('DataIntegrator', () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      mockGitHubClient.getCommits
+      mockGitHubClient.getPullRequests
         .mockResolvedValue(err({ type: 'NETWORK_ERROR', message: 'timeout' } as GitHubError));
 
       mockTogglClient.getTimeEntriesWithProjectNames
@@ -196,7 +203,7 @@ describe('DataIntegrator', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.value.commits.length).toBe(0);
+        expect(result.value.pullRequests.length).toBe(0);
         expect(result.value.timeEntries.length).toBe(3);
         expect(result.value.warnings.length).toBeGreaterThan(0);
         expect(result.value.warnings.some((w) => w.type === 'PARTIAL_DATA')).toBe(true);
@@ -207,8 +214,8 @@ describe('DataIntegrator', () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      mockGitHubClient.getCommits
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo1')))
+      mockGitHubClient.getPullRequests
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo1')))
         .mockResolvedValueOnce(ok([]));
 
       mockTogglClient.getTimeEntriesWithProjectNames
@@ -218,18 +225,18 @@ describe('DataIntegrator', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.value.commits.length).toBe(2);
+        expect(result.value.pullRequests.length).toBe(2);
         expect(result.value.timeEntries.length).toBe(0);
         expect(result.value.warnings.length).toBeGreaterThan(0);
         expect(result.value.warnings.some((w) => w.type === 'PARTIAL_DATA')).toBe(true);
       }
     });
 
-    it('should add NO_COMMITS warning when no commits found', async () => {
+    it('should add NO_PULL_REQUESTS warning when no PRs found', async () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      mockGitHubClient.getCommits
+      mockGitHubClient.getPullRequests
         .mockResolvedValue(ok([]));
 
       mockTogglClient.getTimeEntriesWithProjectNames
@@ -239,8 +246,8 @@ describe('DataIntegrator', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.value.commits.length).toBe(0);
-        expect(result.value.warnings.some((w) => w.type === 'NO_COMMITS')).toBe(true);
+        expect(result.value.pullRequests.length).toBe(0);
+        expect(result.value.warnings.some((w) => w.type === 'NO_PULL_REQUESTS')).toBe(true);
       }
     });
 
@@ -248,8 +255,8 @@ describe('DataIntegrator', () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      mockGitHubClient.getCommits
-        .mockResolvedValue(ok(createMockCommits('owner/repo1')));
+      mockGitHubClient.getPullRequests
+        .mockResolvedValue(ok(createMockPullRequests('owner/repo1')));
 
       mockTogglClient.getTimeEntriesWithProjectNames
         .mockResolvedValue(ok([]));
@@ -267,7 +274,7 @@ describe('DataIntegrator', () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      mockGitHubClient.getCommits
+      mockGitHubClient.getPullRequests
         .mockResolvedValue(err({ type: 'NETWORK_ERROR', message: 'timeout' } as GitHubError));
 
       mockTogglClient.getTimeEntriesWithProjectNames
@@ -281,16 +288,16 @@ describe('DataIntegrator', () => {
       }
     });
 
-    it('should collect commits from multiple repositories in parallel', async () => {
+    it('should collect PRs from multiple repositories in parallel', async () => {
       const dateRange = createDateRange();
       const config: DataSourceConfig = {
         repositories: ['owner/repo1', 'owner/repo2', 'owner/repo3'],
       };
 
-      mockGitHubClient.getCommits
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo1')))
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo2')))
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo3')));
+      mockGitHubClient.getPullRequests
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo1')))
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo2')))
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo3')));
 
       mockTogglClient.getTimeEntriesWithProjectNames
         .mockResolvedValue(ok([]));
@@ -299,21 +306,21 @@ describe('DataIntegrator', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.value.commits.length).toBe(6); // 2 commits x 3 repos
+        expect(result.value.pullRequests.length).toBe(6); // 2 PRs x 3 repos
       }
 
       // Verify all repos were queried
-      expect(mockGitHubClient.getCommits).toHaveBeenCalledTimes(3);
+      expect(mockGitHubClient.getPullRequests).toHaveBeenCalledTimes(3);
     });
 
-    it('should map commit data to CommitData format', async () => {
+    it('should map PR data to PullRequestData format', async () => {
       const dateRange = createDateRange();
       const config: DataSourceConfig = {
         repositories: ['owner/repo1'],
       };
 
-      mockGitHubClient.getCommits
-        .mockResolvedValueOnce(ok(createMockCommits('owner/repo1')));
+      mockGitHubClient.getPullRequests
+        .mockResolvedValueOnce(ok(createMockPullRequests('owner/repo1')));
 
       mockTogglClient.getTimeEntriesWithProjectNames
         .mockResolvedValue(ok([]));
@@ -322,13 +329,13 @@ describe('DataIntegrator', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        const commit = result.value.commits[0];
-        expect(commit.sha).toBe('abc123');
-        expect(commit.message).toBe('feat: add feature A');
-        expect(commit.repository).toBe('owner/repo1');
-        expect(commit.filesChanged).toBe(60); // total from stats
-        expect(commit.additions).toBe(50);
-        expect(commit.deletions).toBe(10);
+        const pr = result.value.pullRequests[0];
+        expect(pr.number).toBe(42);
+        expect(pr.title).toBe('feat: add feature A');
+        expect(pr.description).toBe('This PR adds feature A.');
+        expect(pr.repository).toBe('owner/repo1');
+        expect(pr.url).toBe('https://github.com/owner/repo1/pull/42');
+        expect(pr.state).toBe('merged'); // closed + merged = 'merged'
       }
     });
 
@@ -336,7 +343,7 @@ describe('DataIntegrator', () => {
       const dateRange = createDateRange();
       const config = createDataSourceConfig();
 
-      mockGitHubClient.getCommits.mockResolvedValue(ok([]));
+      mockGitHubClient.getPullRequests.mockResolvedValue(ok([]));
       mockTogglClient.getTimeEntriesWithProjectNames
         .mockResolvedValue(ok(createMockTimeEntries()));
 

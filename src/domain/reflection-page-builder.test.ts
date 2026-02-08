@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ReflectionPageBuilder } from './reflection-page-builder.js';
 import { ok, err } from '../types/result.js';
 import type { AnalysisResult } from './activity-analyzer.js';
-import type { IntegratedData, CommitData, TimeEntryData, DailySummary, ProjectSummary } from './data-integrator.js';
+import type { IntegratedData, PullRequestData, TimeEntryData, DailySummary, ProjectSummary } from './data-integrator.js';
 import type { NotionPage, NotionError, NotionPageContent } from '../infrastructure/clients/notion-client.js';
 import type { PageBuildOptions } from './reflection-page-builder.js';
 
@@ -23,23 +23,23 @@ const createMockAnalysisResult = (): AnalysisResult => ({
   dailySummaries: [
     {
       date: new Date('2026-01-28'),
-      summary: '1件のコミット / 3.0時間の作業',
+      summary: '1件のPR / 3.0時間の作業',
       highlights: ['owner/repo1: feat: add feature A', 'Project Alpha: Feature A development (3.0h)'],
     },
     {
       date: new Date('2026-01-29'),
-      summary: '1件のコミット / 2.0時間の作業',
+      summary: '1件のPR / 2.0時間の作業',
       highlights: ['owner/repo1: fix: bug fix B', 'Project Alpha: Code review (2.0h)'],
     },
   ],
-  weekSummary: '今週は3つのコミットと6.5時間の作業を実施しました。',
+  weekSummary: '今週は3つのPRと6.5時間の作業を実施しました。',
   insights: [
-    '今週の総コミット数: 3件',
+    '今週の総PR数: 3件',
     '今週の総作業時間: 6.5時間',
-    '作業時間あたりのコミット数: 0.46件/時間',
+    '作業時間あたりのPR数: 0.46件/時間',
   ],
   kptSuggestions: {
-    keep: ['継続的なコミット活動', 'Toggl記録の習慣化'],
+    keep: ['継続的なPR活動', 'Toggl記録の習慣化'],
     problem: ['作業時間が短い日がある'],
     tryItems: ['作業時間を均等に分配する'],
   },
@@ -57,17 +57,17 @@ const createMockIntegratedData = (): IntegratedData => ({
     start: new Date('2026-01-27T00:00:00Z'),
     end: new Date('2026-02-02T23:59:59Z'),
   },
-  commits: [
+  pullRequests: [
     {
-      sha: 'abc123',
-      message: 'feat: add feature A',
-      authorDate: new Date('2026-01-28T10:00:00Z'),
+      number: 42,
+      title: 'feat: add feature A',
+      description: 'This PR adds feature A.',
+      createdAt: new Date('2026-01-28T10:00:00Z'),
       repository: 'owner/repo1',
-      filesChanged: 60,
-      additions: 50,
-      deletions: 10,
+      url: 'https://github.com/owner/repo1/pull/42',
+      state: 'merged',
     },
-  ] as CommitData[],
+  ] as PullRequestData[],
   timeEntries: [
     {
       id: 1,
@@ -80,11 +80,11 @@ const createMockIntegratedData = (): IntegratedData => ({
     },
   ] as TimeEntryData[],
   dailySummaries: [
-    { date: new Date('2026-01-28'), commitCount: 1, workHours: 3.0, projects: ['owner/repo1', 'Project Alpha'] },
+    { date: new Date('2026-01-28'), prCount: 1, workHours: 3.0, projects: ['owner/repo1', 'Project Alpha'] },
   ] as DailySummary[],
   projectSummaries: [
-    { projectName: 'owner/repo1', totalCommits: 1, totalWorkHours: 0 },
-    { projectName: 'Project Alpha', totalCommits: 0, totalWorkHours: 3.0 },
+    { projectName: 'owner/repo1', totalPRs: 1, totalWorkHours: 0 },
+    { projectName: 'Project Alpha', totalPRs: 0, totalWorkHours: 3.0 },
   ] as ProjectSummary[],
   warnings: [],
 });
@@ -177,7 +177,7 @@ describe('ReflectionPageBuilder', () => {
       expect(content.properties.weekNumber).toBeGreaterThan(0);
       expect(content.properties.tags).toContain('weekly-reflection');
       expect(content.properties.tags).toContain('auto-generated');
-      expect(content.properties.commitCount).toBe(1);
+      expect(content.properties.prCount).toBe(1);
       expect(content.properties.workHours).toBeCloseTo(3.0, 1);
       expect(content.properties.aiEnabled).toBe(true);
     });
@@ -208,7 +208,7 @@ describe('ReflectionPageBuilder', () => {
 
       // Check all key sections are present
       expect(headingContents.some((h) => h.includes('サマリー') || h.includes('概要'))).toBe(true);
-      expect(headingContents.some((h) => h.includes('GitHub') || h.includes('コミット'))).toBe(true);
+      expect(headingContents.some((h) => h.includes('GitHub') || h.includes('PR'))).toBe(true);
       expect(headingContents.some((h) => h.includes('Toggl') || h.includes('作業時間'))).toBe(true);
       expect(headingContents.some((h) => h.includes('Keep'))).toBe(true);
       expect(headingContents.some((h) => h.includes('Problem'))).toBe(true);
@@ -237,7 +237,7 @@ describe('ReflectionPageBuilder', () => {
         .map((b) => ('content' in b ? b.content : ''));
 
       // KPT suggestions should appear
-      expect(bulletItems.some((item) => item.includes('継続的なコミット活動'))).toBe(true);
+      expect(bulletItems.some((item) => item.includes('継続的なPR活動'))).toBe(true);
       expect(bulletItems.some((item) => item.includes('作業時間が短い日がある'))).toBe(true);
       expect(bulletItems.some((item) => item.includes('作業時間を均等に分配する'))).toBe(true);
     });
@@ -404,14 +404,14 @@ describe('ReflectionPageBuilder', () => {
 
       // Check all key sections
       expect(markdown).toMatch(/サマリー|概要/);
-      expect(markdown).toMatch(/GitHub|コミット/);
+      expect(markdown).toMatch(/GitHub|PR/);
       expect(markdown).toMatch(/Toggl|作業時間/);
       expect(markdown).toContain('Keep');
       expect(markdown).toContain('Problem');
       expect(markdown).toContain('Try');
     });
 
-    it('should include commit details in Markdown', () => {
+    it('should include PR details in Markdown', () => {
       const analysis = createMockAnalysisResult();
       const data = createMockIntegratedData();
 
@@ -437,7 +437,7 @@ describe('ReflectionPageBuilder', () => {
 
       const markdown = builder.buildMarkdown(analysis, data);
 
-      expect(markdown).toContain('継続的なコミット活動');
+      expect(markdown).toContain('継続的なPR活動');
       expect(markdown).toContain('作業時間が短い日がある');
       expect(markdown).toContain('作業時間を均等に分配する');
     });

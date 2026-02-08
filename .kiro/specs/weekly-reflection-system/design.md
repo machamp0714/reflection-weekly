@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Purpose**: 本システムは、開発者の週次振り返りプロセスを自動化し、GitHubコミット履歴とToggl打刻データを統合してAI分析を行い、Notionに構造化されたKPT形式の振り返りページを自動生成する。
+**Purpose**: 本システムは、開発者の週次振り返りプロセスを自動化し、GitHub PRデータとToggl打刻データを統合してAI分析を行い、Notionに構造化されたKPT形式の振り返りページを自動生成する。
 
 **Users**: 個人開発者およびチーム開発者が、週次の活動振り返りと自己成長追跡に利用する。
 
@@ -122,8 +122,8 @@ sequenceDiagram
 
     par Data Collection
         UseCase->>DataIntegrator: collectData(dateRange)
-        DataIntegrator->>GitHubClient: getCommits(repos, dateRange)
-        GitHubClient-->>DataIntegrator: commits[]
+        DataIntegrator->>GitHubClient: getPullRequests(repos, dateRange)
+        GitHubClient-->>DataIntegrator: pullRequests[]
         DataIntegrator->>TogglClient: getTimeEntries(dateRange)
         TogglClient-->>DataIntegrator: timeEntries[]
     end
@@ -238,9 +238,10 @@ sequenceDiagram
 
 | Requirement | Summary | Components | Interfaces | Flows |
 |-------------|---------|------------|------------|-------|
-| 1.1, 1.2, 1.3 | GitHubコミット取得、フィールド抽出、エラー処理 | GitHubClient | IGitHubClient | Main Flow |
-| 1.4 | コミットなし通知 | GitHubClient, CLI | IGitHubClient | Main Flow |
-| 1.5 | 複数リポジトリ対応 | GitHubClient, ConfigManager | IGitHubClient, IConfigManager | Main Flow |
+| 1.1, 1.2, 1.4 | GitHub PR取得、フィールド抽出、エラー処理 | GitHubClient | IGitHubClient | Main Flow |
+| 1.3 | PR数集計 | DataIntegrator, GitHubClient | IDataIntegrator, IGitHubClient | Main Flow |
+| 1.5 | PRなし通知 | GitHubClient, CLI | IGitHubClient | Main Flow |
+| 1.6 | 複数リポジトリ対応 | GitHubClient, ConfigManager | IGitHubClient, IConfigManager | Main Flow |
 | 2.1, 2.2, 2.3 | Togglデータ取得、フィールド抽出、エラー処理 | TogglClient | ITogglClient | Main Flow |
 | 2.4 | 打刻データなし通知 | TogglClient, CLI | ITogglClient | Main Flow |
 | 2.5 | プロジェクト別・日別集計 | DataIntegrator | IDataIntegrator | Main Flow |
@@ -282,10 +283,10 @@ sequenceDiagram
 |-----------|--------------|--------|--------------|------------------|-----------|
 | CLI | Presentation | コマンドライン引数解析と実行制御 | 8.1-8.5, 9.5 | Commander.js (P0), ScheduleManager (P0) | - |
 | ReflectionUseCase | Application | 振り返り生成のオーケストレーション | 全体調整 | ConfigManager (P0), Domain Components (P0) | Service |
-| DataIntegrator | Domain | データ収集と統合 | 1.1-1.5, 2.1-2.5, 3.1 | GitHubClient (P0), TogglClient (P0) | Service |
+| DataIntegrator | Domain | データ収集と統合 | 1.1-1.3, 1.5-1.6, 2.1-2.5, 3.1 | GitHubClient (P0), TogglClient (P0) | Service |
 | ActivityAnalyzer | Domain | AI分析とサマリー生成 | 3.2-3.7, 5.5, 6.3 | OpenAIClient (P1) | Service |
 | ReflectionPageBuilder | Domain | ページコンテンツ構築 | 4.1-4.6, 5.1-5.4, 6.1-6.5 | NotionClient (P0) | Service |
-| GitHubClient | Infrastructure | GitHub API連携 | 1.1-1.5 | axios (P0), GitHub API (External) | API |
+| GitHubClient | Infrastructure | GitHub API連携 | 1.1-1.2, 1.4, 1.6 | axios (P0), GitHub API (External) | API |
 | TogglClient | Infrastructure | Toggl API連携 | 2.1-2.5 | axios (P0), Toggl API (External) | API |
 | OpenAIClient | Infrastructure | OpenAI API連携 | 3.2-3.6, 5.5 | axios (P0), OpenAI API (External) | API |
 | NotionClient | Infrastructure | Notion API連携 | 4.1-4.6, 6.1, 6.2, 6.4 | axios (P0), Notion API (External) | API |
@@ -344,7 +345,7 @@ interface CLIResult {
 
 interface ExecutionSummary {
   readonly dateRange: DateRange;
-  readonly commitCount: number;
+  readonly prCount: number;
   readonly timeEntryCount: number;
   readonly totalWorkHours: number;
   readonly aiAnalysisEnabled: boolean;
@@ -420,7 +421,7 @@ type ReflectionError =
 | Field | Detail |
 |-------|--------|
 | Intent | GitHubとTogglからのデータ収集と時系列統合 |
-| Requirements | 1.1, 1.2, 1.4, 1.5, 2.1, 2.2, 2.4, 2.5, 3.1 |
+| Requirements | 1.1, 1.2, 1.3, 1.5, 1.6, 2.1, 2.2, 2.4, 2.5, 3.1 |
 
 **Responsibilities & Constraints**
 - 複数データソースからの並列データ取得
@@ -429,7 +430,7 @@ type ReflectionError =
 
 **Dependencies**
 - Inbound: ReflectionUseCase - データ収集要求 (P0)
-- Outbound: GitHubClient - コミット取得 (P0)
+- Outbound: GitHubClient - PR取得 (P0)
 - Outbound: TogglClient - タイムエントリ取得 (P0)
 
 **Contracts**: Service [x]
@@ -451,21 +452,21 @@ interface DataSourceConfig {
 
 interface IntegratedData {
   readonly dateRange: DateRange;
-  readonly commits: readonly CommitData[];
+  readonly pullRequests: readonly PullRequestData[];
   readonly timeEntries: readonly TimeEntryData[];
   readonly dailySummaries: readonly DailySummary[];
   readonly projectSummaries: readonly ProjectSummary[];
   readonly warnings: readonly DataWarning[];
 }
 
-interface CommitData {
-  readonly sha: string;
-  readonly message: string;
-  readonly authorDate: Date;
+interface PullRequestData {
+  readonly number: number;
+  readonly title: string;
+  readonly description: string;
+  readonly createdAt: Date;
   readonly repository: string;
-  readonly filesChanged: number;
-  readonly additions: number;
-  readonly deletions: number;
+  readonly url: string;
+  readonly state: 'open' | 'closed' | 'merged';
 }
 
 interface TimeEntryData {
@@ -480,19 +481,19 @@ interface TimeEntryData {
 
 interface DailySummary {
   readonly date: Date;
-  readonly commitCount: number;
+  readonly prCount: number;
   readonly workHours: number;
   readonly projects: readonly string[];
 }
 
 interface ProjectSummary {
   readonly projectName: string;
-  readonly totalCommits: number;
+  readonly totalPRs: number;
   readonly totalWorkHours: number;
 }
 
 type DataWarning =
-  | { readonly type: 'NO_COMMITS'; readonly message: string }
+  | { readonly type: 'NO_PULL_REQUESTS'; readonly message: string }
   | { readonly type: 'NO_TIME_ENTRIES'; readonly message: string }
   | { readonly type: 'PARTIAL_DATA'; readonly source: string; readonly message: string };
 
@@ -516,7 +517,7 @@ interface SourceError {
 
 **Responsibilities & Constraints**
 - OpenAI APIを使用した活動サマリー生成
-- コミット数と作業時間の相関分析
+- PR数と作業時間の相関分析
 - KPT（Keep/Problem/Try）提案の自動生成
 - OpenAI API障害時の基本サマリーフォールバック
 
@@ -560,7 +561,7 @@ interface ActivityTrend {
 }
 
 interface WeeklyComparison {
-  readonly commitDelta: number;
+  readonly prDelta: number;
   readonly workHoursDelta: number;
   readonly trend: 'increasing' | 'decreasing' | 'stable';
 }
@@ -684,10 +685,10 @@ type PageBuildError =
 | Field | Detail |
 |-------|--------|
 | Intent | GitHub REST APIとの通信を担当 |
-| Requirements | 1.1, 1.2, 1.3, 1.5 |
+| Requirements | 1.1, 1.2, 1.4, 1.6 |
 
 **Responsibilities & Constraints**
-- コミット履歴の取得（複数リポジトリ対応）
+- PR（Pull Request）データの取得（複数リポジトリ対応）
 - ページネーション処理
 - レート制限対応（5,000 req/hour）
 
@@ -701,36 +702,34 @@ type PageBuildError =
 
 | Method | Endpoint | Request | Response | Errors |
 |--------|----------|---------|----------|--------|
-| GET | /repos/{owner}/{repo}/commits | since, until, per_page, page | Commit[] | 401, 403, 404, 422, 503 |
+| GET | /repos/{owner}/{repo}/pulls | state, sort, direction, per_page, page | PullRequest[] | 401, 403, 404, 422, 503 |
 
 ```typescript
 interface IGitHubClient {
-  getCommits(
+  getPullRequests(
     repository: string,
     dateRange: DateRange,
-    options?: GetCommitsOptions
-  ): Promise<Result<readonly GitHubCommit[], GitHubError>>;
+    options?: GetPullRequestsOptions
+  ): Promise<Result<readonly GitHubPullRequest[], GitHubError>>;
 }
 
-interface GetCommitsOptions {
-  readonly author?: string;
+interface GetPullRequestsOptions {
+  readonly state?: 'open' | 'closed' | 'all';
   readonly perPage?: number;
 }
 
-interface GitHubCommit {
-  readonly sha: string;
-  readonly message: string;
-  readonly author: {
-    readonly name: string;
-    readonly email: string;
-    readonly date: string;
+interface GitHubPullRequest {
+  readonly number: number;
+  readonly title: string;
+  readonly body: string | null;
+  readonly user: {
+    readonly login: string;
   };
+  readonly createdAt: string;
   readonly url: string;
-  readonly stats?: {
-    readonly additions: number;
-    readonly deletions: number;
-    readonly total: number;
-  };
+  readonly htmlUrl: string;
+  readonly state: 'open' | 'closed';
+  readonly merged: boolean;
 }
 
 type GitHubError =
@@ -852,7 +851,7 @@ interface IOpenAIClient {
 }
 
 interface SummaryInput {
-  readonly commits: readonly CommitData[];
+  readonly pullRequests: readonly PullRequestData[];
   readonly timeEntries: readonly TimeEntryData[];
   readonly dailySummaries: readonly DailySummary[];
 }
@@ -1178,7 +1177,7 @@ interface ExecutionSuccessResult {
   readonly duration: number;
   readonly pageUrl: string;
   readonly summary: {
-    readonly commitCount: number;
+    readonly prCount: number;
     readonly workHours: number;
   };
 }
@@ -1223,10 +1222,10 @@ erDiagram
     Reflection ||--|| AnalysisResult : has
     Reflection ||--|| KPTContent : has
 
-    DailySummary ||--o{ CommitData : includes
+    DailySummary ||--o{ PullRequestData : includes
     DailySummary ||--o{ TimeEntryData : includes
 
-    ProjectSummary ||--o{ CommitData : groups
+    ProjectSummary ||--o{ PullRequestData : groups
     ProjectSummary ||--o{ TimeEntryData : groups
 
     KPTContent ||--o{ KPTItem : contains
@@ -1240,14 +1239,14 @@ erDiagram
 
     DailySummary {
         Date date
-        int commitCount
+        int prCount
         float workHours
         string summary
     }
 
     ProjectSummary {
         string projectName
-        int totalCommits
+        int totalPRs
         float totalWorkHours
     }
 
@@ -1268,10 +1267,11 @@ erDiagram
         boolean isAISuggested
     }
 
-    CommitData {
-        string sha
-        string message
-        Date authorDate
+    PullRequestData {
+        int number
+        string title
+        string description
+        Date createdAt
         string repository
     }
 
@@ -1307,7 +1307,7 @@ erDiagram
 | Start Date | date | 振り返り期間開始日 |
 | End Date | date | 振り返り期間終了日 |
 | Tags | multi_select | 自動付与タグ（例: "weekly-reflection", "auto-generated"） |
-| Commit Count | number | 総コミット数 |
+| PR Count | number | 総PR数 |
 | Work Hours | number | 総作業時間 |
 | AI Enabled | checkbox | AI分析の有効/無効 |
 
@@ -1332,7 +1332,7 @@ interface NotionRequestMapper {
 
 **外部APIレスポンスからドメインオブジェクトへの変換**:
 
-- GitHub API Response -> CommitData[]
+- GitHub API Response -> PullRequestData[]
 - Toggl API Response -> TimeEntryData[]
 - OpenAI API Response -> AnalysisResult
 
@@ -1390,7 +1390,7 @@ interface NotionRequestMapper {
 
 ### Integration Tests
 
-- GitHub API連携: 実APIまたはモックサーバーでのコミット取得
+- GitHub API連携: 実APIまたはモックサーバーでのPR取得
 - Toggl API連携: 実APIまたはモックサーバーでのタイムエントリ取得
 - OpenAI API連携: モックレスポンスでのサマリー生成
 - Notion API連携: モックサーバーでのページ作成
@@ -1406,7 +1406,7 @@ interface NotionRequestMapper {
 
 ### Performance Tests
 
-- 大量コミット（100件以上）のページネーション処理
+- 大量PR（100件以上）のページネーション処理
 - 複数リポジトリ（10件以上）の並列取得
 
 ---
@@ -1430,7 +1430,7 @@ interface NotionRequestMapper {
 
 ### Target Metrics
 
-- 通常実行時間: 30秒以内（7日間、3リポジトリ、100コミット程度）
+- 通常実行時間: 30秒以内（7日間、3リポジトリ、100PR程度）
 - メモリ使用量: 256MB以下
 
 ### Optimization Techniques

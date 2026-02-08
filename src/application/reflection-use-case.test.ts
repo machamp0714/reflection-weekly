@@ -6,7 +6,7 @@ import type {
   DateRange,
   DataSourceConfig,
   DataCollectionError,
-  CommitData,
+  PullRequestData,
   TimeEntryData,
 } from '../domain/data-integrator.js';
 import type { AnalysisResult, AnalysisError } from '../domain/activity-analyzer.js';
@@ -69,25 +69,25 @@ function createMockDateRange(): DateRange {
   };
 }
 
-function createMockCommits(): CommitData[] {
+function createMockPullRequests(): PullRequestData[] {
   return [
     {
-      sha: 'abc123',
-      message: 'feat: add feature',
-      authorDate: new Date('2026-01-28T10:00:00Z'),
+      number: 42,
+      title: 'feat: add feature',
+      description: 'This PR adds a feature.',
+      createdAt: new Date('2026-01-28T10:00:00Z'),
       repository: 'owner/repo1',
-      filesChanged: 5,
-      additions: 100,
-      deletions: 20,
+      url: 'https://github.com/owner/repo1/pull/42',
+      state: 'merged',
     },
     {
-      sha: 'def456',
-      message: 'fix: bug fix',
-      authorDate: new Date('2026-01-29T14:00:00Z'),
+      number: 43,
+      title: 'fix: bug fix',
+      description: 'Fixes a bug.',
+      createdAt: new Date('2026-01-29T14:00:00Z'),
       repository: 'owner/repo1',
-      filesChanged: 2,
-      additions: 10,
-      deletions: 5,
+      url: 'https://github.com/owner/repo1/pull/43',
+      state: 'open',
     },
   ];
 }
@@ -109,25 +109,25 @@ function createMockTimeEntries(): TimeEntryData[] {
 function createMockIntegratedData(): IntegratedData {
   return {
     dateRange: createMockDateRange(),
-    commits: createMockCommits(),
+    pullRequests: createMockPullRequests(),
     timeEntries: createMockTimeEntries(),
     dailySummaries: [
       {
         date: new Date('2026-01-28T00:00:00Z'),
-        commitCount: 1,
+        prCount: 1,
         workHours: 8,
         projects: ['owner/repo1', 'Project A'],
       },
       {
         date: new Date('2026-01-29T00:00:00Z'),
-        commitCount: 1,
+        prCount: 1,
         workHours: 0,
         projects: ['owner/repo1'],
       },
     ],
     projectSummaries: [
-      { projectName: 'owner/repo1', totalCommits: 2, totalWorkHours: 0 },
-      { projectName: 'Project A', totalCommits: 0, totalWorkHours: 8 },
+      { projectName: 'owner/repo1', totalPRs: 2, totalWorkHours: 0 },
+      { projectName: 'Project A', totalPRs: 0, totalWorkHours: 8 },
     ],
     warnings: [],
   };
@@ -150,8 +150,8 @@ function createMockAnalysisResult(): AnalysisResult {
         highlights: ['feat: add feature'],
       },
     ],
-    weekSummary: 'Productive week with 2 commits and 8h work',
-    insights: ['Total commits: 2', 'Total work hours: 8'],
+    weekSummary: 'Productive week with 2 PRs and 8h work',
+    insights: ['Total PRs: 2', 'Total work hours: 8'],
     kptSuggestions: createMockKPTSuggestions(),
     aiEnabled: true,
   };
@@ -215,7 +215,7 @@ describe('ReflectionUseCase', () => {
       if (result.success) {
         expect(result.value.pageUrl).toBe('https://notion.so/page-123');
         expect(result.value.summary).toBeDefined();
-        expect(result.value.summary.commitCount).toBe(2);
+        expect(result.value.summary.prCount).toBe(2);
         expect(result.value.summary.timeEntryCount).toBe(1);
         expect(result.value.summary.totalWorkHours).toBeCloseTo(8);
         expect(result.value.summary.aiAnalysisEnabled).toBe(true);
@@ -261,9 +261,9 @@ describe('ReflectionUseCase', () => {
 
       expect(deps.activityAnalyzer.analyze).toHaveBeenCalledTimes(1);
       const callArgs = vi.mocked(deps.activityAnalyzer.analyze).mock.calls[0];
-      expect(callArgs[0]).toHaveProperty('commits');
+      expect(callArgs[0]).toHaveProperty('pullRequests');
       expect(callArgs[0]).toHaveProperty('timeEntries');
-      expect(Array.isArray(callArgs[0].commits)).toBe(true);
+      expect(Array.isArray(callArgs[0].pullRequests)).toBe(true);
       expect(Array.isArray(callArgs[0].timeEntries)).toBe(true);
     });
 
@@ -281,7 +281,7 @@ describe('ReflectionUseCase', () => {
           aiEnabled: true,
         }),
         expect.objectContaining({
-          commits: expect.any(Array),
+          pullRequests: expect.any(Array),
         }),
         expect.objectContaining({
           dryRun: false,
@@ -295,7 +295,7 @@ describe('ReflectionUseCase', () => {
       const dataWithWarnings: IntegratedData = {
         ...integratedData,
         warnings: [
-          { type: 'NO_COMMITS', message: 'No commits found' },
+          { type: 'NO_PULL_REQUESTS', message: 'No PRs found' },
         ],
       };
       vi.mocked(deps.dataIntegrator.collectAndIntegrate).mockResolvedValue(
@@ -647,7 +647,7 @@ describe('ReflectionUseCase', () => {
       if (result.success) {
         const summary = result.value.summary;
         expect(summary.dateRange).toEqual(createMockDateRange());
-        expect(summary.commitCount).toBe(2);
+        expect(summary.prCount).toBe(2);
         expect(summary.timeEntryCount).toBe(1);
         expect(summary.totalWorkHours).toBeCloseTo(8);
         expect(summary.aiAnalysisEnabled).toBe(true);
@@ -658,12 +658,12 @@ describe('ReflectionUseCase', () => {
     it('should generate summary with zero values when data is empty', async () => {
       const emptyData: IntegratedData = {
         dateRange: createMockDateRange(),
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         dailySummaries: [],
         projectSummaries: [],
         warnings: [
-          { type: 'NO_COMMITS', message: 'No commits' },
+          { type: 'NO_PULL_REQUESTS', message: 'No PRs' },
           { type: 'NO_TIME_ENTRIES', message: 'No time entries' },
         ],
       };
@@ -678,7 +678,7 @@ describe('ReflectionUseCase', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.value.summary.commitCount).toBe(0);
+        expect(result.value.summary.prCount).toBe(0);
         expect(result.value.summary.timeEntryCount).toBe(0);
         expect(result.value.summary.totalWorkHours).toBe(0);
       }
