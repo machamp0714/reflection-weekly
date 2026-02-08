@@ -14,8 +14,8 @@ export interface KPTSuggestions {
  * Summary input data
  */
 export interface SummaryInput {
-  readonly commits: readonly {
-    readonly message: string;
+  readonly pullRequests: readonly {
+    readonly title: string;
     readonly repository: string;
     readonly date: string;
   }[];
@@ -118,11 +118,11 @@ export class OpenAIClient {
   }
 
   /**
-   * Generate activity summary from commits and time entries
+   * Generate activity summary from pull requests and time entries
    */
   async generateSummary(data: SummaryInput): Promise<Result<string, OpenAIError>> {
     const systemPrompt = `あなたは週次振り返りアシスタントです。
-GitHubのコミット履歴とTogglの作業時間データを分析し、
+GitHubのPull Request履歴とTogglの作業時間データを分析し、
 開発者の1週間の活動を簡潔に要約してください。
 日本語で回答してください。`;
 
@@ -202,18 +202,18 @@ GitHubのコミット履歴とTogglの作業時間データを分析し、
   private buildSummaryPrompt(data: SummaryInput): string {
     let prompt = `## 期間: ${data.period.start} - ${data.period.end}\n\n`;
 
-    if (data.commits.length > 0) {
-      prompt += '## コミット履歴\n';
-      const groupedCommits = this.groupByRepository(data.commits);
-      for (const [repo, commits] of Object.entries(groupedCommits)) {
+    if (data.pullRequests.length > 0) {
+      prompt += '## Pull Request\n';
+      const groupedPRs = this.groupByRepository(data.pullRequests);
+      for (const [repo, prs] of Object.entries(groupedPRs)) {
         prompt += `### ${repo}\n`;
-        commits.forEach((c) => {
-          prompt += `- ${c.message} (${c.date})\n`;
+        prs.forEach((pr) => {
+          prompt += `- ${pr.title} (${pr.date})\n`;
         });
       }
       prompt += '\n';
     } else {
-      prompt += '## コミット履歴\nこの期間のコミットはありません。\n\n';
+      prompt += '## Pull Request\nこの期間のPull Requestはありません。\n\n';
     }
 
     if (data.timeEntries.length > 0) {
@@ -262,14 +262,14 @@ GitHubのコミット履歴とTogglの作業時間データを分析し、
   }
 
   private groupByRepository(
-    commits: readonly { message: string; repository: string; date: string }[]
-  ): Record<string, { message: string; repository: string; date: string }[]> {
-    const grouped: Record<string, { message: string; repository: string; date: string }[]> = {};
-    for (const commit of commits) {
-      if (!grouped[commit.repository]) {
-        grouped[commit.repository] = [];
+    pullRequests: readonly { title: string; repository: string; date: string }[]
+  ): Record<string, { title: string; repository: string; date: string }[]> {
+    const grouped: Record<string, { title: string; repository: string; date: string }[]> = {};
+    for (const pr of pullRequests) {
+      if (!grouped[pr.repository]) {
+        grouped[pr.repository] = [];
       }
-      grouped[commit.repository].push(commit);
+      grouped[pr.repository].push(pr);
     }
     return grouped;
   }

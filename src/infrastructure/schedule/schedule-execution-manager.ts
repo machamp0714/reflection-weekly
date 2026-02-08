@@ -193,7 +193,7 @@ export class ScheduleExecutionManager {
       duration,
       pageUrl: pageUrl ?? '',
       summary: {
-        commitCount: result.summary.prCount,
+        prCount: result.summary.prCount,
         workHours: result.summary.totalWorkHours,
       },
     });

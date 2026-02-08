@@ -273,7 +273,7 @@ describe('ActivityAnalyzer', () => {
       // Verify generateSummary was called with correct format
       expect(mockOpenAIClient.generateSummary).toHaveBeenCalledTimes(1);
       const summaryInput = mockOpenAIClient.generateSummary.mock.calls[0][0];
-      expect(summaryInput.commits.length).toBe(3);
+      expect(summaryInput.pullRequests.length).toBe(3);
       expect(summaryInput.timeEntries.length).toBe(3);
       expect(summaryInput.period).toBeDefined();
 

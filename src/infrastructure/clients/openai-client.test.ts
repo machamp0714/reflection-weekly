@@ -53,9 +53,9 @@ describe('OpenAIClient', () => {
       mockPost.mockResolvedValueOnce(mockResponse);
 
       const input: SummaryInput = {
-        commits: [
-          { message: 'feat: add login form', repository: 'owner/repo', date: '2026-01-28' },
-          { message: 'fix: validation bug', repository: 'owner/repo', date: '2026-01-29' },
+        pullRequests: [
+          { title: 'feat: add login form', repository: 'owner/repo', date: '2026-01-28' },
+          { title: 'fix: validation bug', repository: 'owner/repo', date: '2026-01-29' },
         ],
         timeEntries: [
           { description: 'Frontend development', projectName: 'Project A', durationHours: 8 },
@@ -71,7 +71,7 @@ describe('OpenAIClient', () => {
       }
     });
 
-    it('should handle empty commits and time entries', async () => {
+    it('should handle empty pull requests and time entries', async () => {
       const mockResponse = {
         data: {
           id: 'chatcmpl-124',
@@ -91,7 +91,7 @@ describe('OpenAIClient', () => {
       mockPost.mockResolvedValueOnce(mockResponse);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -111,7 +111,7 @@ describe('OpenAIClient', () => {
       mockPost.mockRejectedValueOnce(error);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -135,7 +135,7 @@ describe('OpenAIClient', () => {
       mockPost.mockRejectedValue(error);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -160,7 +160,7 @@ describe('OpenAIClient', () => {
                 role: 'assistant',
                 content: `\`\`\`json
 {
-  "keep": ["定期的なコミット", "テスト駆動開発"],
+  "keep": ["定期的なPR作成", "テスト駆動開発"],
   "problem": ["ドキュメント不足"],
   "try": ["コードレビューの実施"]
 }
@@ -184,7 +184,7 @@ describe('OpenAIClient', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.value.keep).toContain('定期的なコミット');
+        expect(result.value.keep).toContain('定期的なPR作成');
         expect(result.value.problem).toContain('ドキュメント不足');
         expect(result.value.tryItems).toContain('コードレビューの実施');
       }
@@ -276,7 +276,7 @@ describe('OpenAIClient', () => {
       mockPost.mockResolvedValueOnce(mockResponse);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -300,7 +300,7 @@ describe('OpenAIClient', () => {
       mockPost.mockRejectedValue(error);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -326,7 +326,7 @@ describe('OpenAIClient', () => {
       mockPost.mockRejectedValueOnce(error);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -352,7 +352,7 @@ describe('OpenAIClient', () => {
       mockPost.mockRejectedValueOnce(error);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -372,7 +372,7 @@ describe('OpenAIClient', () => {
       mockPost.mockRejectedValueOnce(genericError);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -405,7 +405,7 @@ describe('OpenAIClient', () => {
       mockPost.mockResolvedValueOnce(mockResponse);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };
@@ -443,7 +443,7 @@ describe('OpenAIClient', () => {
       customMockPost.mockResolvedValueOnce(mockResponse);
 
       const input: SummaryInput = {
-        commits: [],
+        pullRequests: [],
         timeEntries: [],
         period: { start: '2026-01-27', end: '2026-02-02' },
       };

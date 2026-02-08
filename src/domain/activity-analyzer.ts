@@ -1,6 +1,11 @@
 import { Result, ok } from '../types/result.js';
 import type { IntegratedData } from './data-integrator.js';
-import type { SummaryInput, KPTInput, KPTSuggestions, OpenAIError } from '../infrastructure/clients/openai-client.js';
+import type {
+  SummaryInput,
+  KPTInput,
+  KPTSuggestions,
+  OpenAIError,
+} from '../infrastructure/clients/openai-client.js';
 
 /**
  * Daily analysis result
@@ -202,10 +207,12 @@ export class ActivityAnalyzer {
     // Most active day
     if (data.dailySummaries.length > 0) {
       const mostActiveDay = [...data.dailySummaries].sort(
-        (a, b) => (b.prCount + b.workHours) - (a.prCount + a.workHours)
+        (a, b) => b.prCount + b.workHours - (a.prCount + a.workHours)
       )[0];
       const dayName = this.getDayName(mostActiveDay.date);
-      insights.push(`最も活動的な日: ${dayName}（PR${mostActiveDay.prCount}件、${mostActiveDay.workHours.toFixed(1)}h）`);
+      insights.push(
+        `最も活動的な日: ${dayName}（PR${mostActiveDay.prCount}件、${mostActiveDay.workHours.toFixed(1)}h）`
+      );
     }
 
     // Project diversity
@@ -235,7 +242,9 @@ export class ActivityAnalyzer {
     }
 
     // Largest time entries
-    const sortedEntries = [...data.timeEntries].sort((a, b) => b.durationSeconds - a.durationSeconds);
+    const sortedEntries = [...data.timeEntries].sort(
+      (a, b) => b.durationSeconds - a.durationSeconds
+    );
     for (const entry of sortedEntries.slice(0, 3)) {
       const hours = (entry.durationSeconds / 3600).toFixed(1);
       highlights.push(`${entry.projectName}: ${entry.description} (${hours}h)`);
@@ -249,8 +258,8 @@ export class ActivityAnalyzer {
    */
   private buildSummaryInput(data: IntegratedData): SummaryInput {
     return {
-      commits: data.pullRequests.map((pr) => ({
-        message: pr.title,
+      pullRequests: data.pullRequests.map((pr) => ({
+        title: pr.title,
         repository: pr.repository,
         date: pr.createdAt.toISOString().split('T')[0],
       })),
@@ -348,14 +357,8 @@ export class ActivityAnalyzer {
     }
 
     // Calculate total work hours for distribution
-    const totalWorkHours = data.projectSummaries.reduce(
-      (sum, p) => sum + p.totalWorkHours,
-      0
-    );
-    const totalPRs = data.projectSummaries.reduce(
-      (sum, p) => sum + p.totalPRs,
-      0
-    );
+    const totalWorkHours = data.projectSummaries.reduce((sum, p) => sum + p.totalWorkHours, 0);
+    const totalPRs = data.projectSummaries.reduce((sum, p) => sum + p.totalPRs, 0);
     const totalActivity = totalWorkHours + totalPRs;
 
     if (totalActivity === 0) {

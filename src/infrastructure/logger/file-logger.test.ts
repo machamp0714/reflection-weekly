@@ -74,7 +74,7 @@ describe('FileLogger', () => {
         duration: 5000,
         pageUrl: 'https://notion.so/page/12345',
         summary: {
-          commitCount: 25,
+          prCount: 25,
           workHours: 40.5,
         },
       };
@@ -184,7 +184,7 @@ describe('FileLogger', () => {
         executionId: 'exec-1',
         duration: 1000,
         pageUrl: 'https://notion.so/1',
-        summary: { commitCount: 5, workHours: 10 },
+        summary: { prCount: 5, workHours: 10 },
       });
       logger.logExecutionStart({
         executionId: 'exec-2',

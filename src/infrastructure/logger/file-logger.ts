@@ -19,7 +19,7 @@ export interface ExecutionSuccessResult {
   readonly duration: number;
   readonly pageUrl: string;
   readonly summary: {
-    readonly commitCount: number;
+    readonly prCount: number;
     readonly workHours: number;
   };
 }
@@ -124,7 +124,7 @@ export class FileLogger {
       executionId: result.executionId,
       duration: result.duration,
       pageUrl: result.pageUrl,
-      commitCount: result.summary.commitCount,
+      prCount: result.summary.prCount,
       workHours: result.summary.workHours,
     });
   }

@@ -17,7 +17,7 @@ export interface PageProperties {
   readonly weekNumber: number;
   readonly dateRange: string;
   readonly tags: readonly string[];
-  readonly commitCount?: number;
+  readonly prCount?: number;
   readonly workHours?: number;
   readonly aiEnabled?: boolean;
 }
@@ -243,10 +243,10 @@ export class NotionClient {
       };
     }
 
-    // Commit Count
-    if (content.properties.commitCount !== undefined) {
-      properties['Commit Count'] = {
-        number: content.properties.commitCount,
+    // PR Count
+    if (content.properties.prCount !== undefined) {
+      properties['PR Count'] = {
+        number: content.properties.prCount,
       };
     }
 

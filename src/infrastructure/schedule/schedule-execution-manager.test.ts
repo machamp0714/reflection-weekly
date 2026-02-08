@@ -120,7 +120,7 @@ describe('ScheduleExecutionManager', () => {
           duration: expect.any(Number),
           pageUrl: 'https://notion.so/page-123',
           summary: expect.objectContaining({
-            commitCount: expect.any(Number),
+            prCount: expect.any(Number),
             workHours: expect.any(Number),
           }),
         }),
