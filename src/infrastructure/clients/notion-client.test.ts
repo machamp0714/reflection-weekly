@@ -84,9 +84,9 @@ describe('NotionClient', () => {
       expect(requestBody.properties['日付']).toEqual({
         date: { start: '2026-01-27', end: '2026-02-02' },
       });
-      expect(requestBody.properties['コミット数']).toEqual({ number: 25 });
       expect(requestBody.properties['作業時間']).toEqual({ number: 40 });
       // 存在しないプロパティは送信されない
+      expect(requestBody.properties['コミット数']).toBeUndefined();
       expect(requestBody.properties['Week Number']).toBeUndefined();
       expect(requestBody.properties['Tags']).toBeUndefined();
       expect(requestBody.properties['AI Enabled']).toBeUndefined();

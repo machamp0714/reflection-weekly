@@ -255,13 +255,6 @@ export class NotionClient {
       };
     }
 
-    // コミット数 (PR Count)
-    if (content.properties.prCount !== undefined) {
-      properties['コミット数'] = {
-        number: content.properties.prCount,
-      };
-    }
-
     // 作業時間 (Work Hours)
     if (content.properties.workHours !== undefined) {
       properties['作業時間'] = {
